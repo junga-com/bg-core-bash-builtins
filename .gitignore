@@ -1,2 +1,4 @@
 *.o
-bgObjects
+*.so
+.bglocal/*
+tags

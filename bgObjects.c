@@ -233,6 +233,7 @@ char* MemberTypeToString(MemberType mt, char* errorMsg, char* _rsvMemberValue)
             return temp;
         default: return "UNKNOWN MemberType";
     }
+    return temp;
 };
 
 int setErrorMsg(char* fmt, ...)
@@ -655,6 +656,7 @@ int BashClass_init(BashClass* pCls, char* className) {
     if (invisible_p(pCls->vVMT)) {
         VUNSETATTR (pCls->vVMT, att_invisible);
     }
+    return EXECUTION_SUCCESS;
 }
 
 int BashClass_isVMTDirty(BashClass* pCls, char* currentCacheNumStr) {
@@ -1109,7 +1111,7 @@ int _bgclassCall(WORD_LIST* list)
                 // do noop -- for he time being, the bash function detects and handles this case if _METHOD is empty
             }
         }
-        SHELL_VAR* vMethod = bind_variable_value(make_local_variable("_METHOD",0), (_METHOD)?_METHOD:"", 0);
+        bind_variable_value(make_local_variable("_METHOD",0), (_METHOD)?_METHOD:"", 0);
 
 
         if (assoc_p(objInstance.vThis)) {
