@@ -1,1 +1,47 @@
 bgObject bash loadable builtin for bash
+
+The bg-core package includes the bg_objects.sh bash script library that enables using object oriented programming techniques in
+bash scripts. The default implementation uses only bash functions to implement the OO features. That works but an object oriented
+method call adds about 20ms (on an Intel 11th Gen Core i7-1165G7) of overhead compared to a normal bash function call. Enabling
+this loadable builtin will redirect several bg_objects.sh functions to the "bgObject <cmd> [<arg1>...<argN>]" builtin command which
+eliminates most of that overhead.
+
+The bg_object.sh library script will attempt to "enable -f bgObjects.so bgObjects" but will fallback to the bash script implementation
+if the builtin is not found in any of the paths in BASH_LOADABLES_PATH. The path /usr/lib will be searched if BASH_LOADABLES_PATH
+is not set.
+
+Example OO Bash...
+
+	$ cat /tmp/test.sh
+	#!/usr/bin/env bash
+	source /usr/lib/bg_core.sh
+	import bg_objects.sh  ;$L1;$L2
+
+	DeclareClass Animal
+	function Animal::__construct() {
+		this[name]="${1:-anonymous}"
+	}
+	function Animal::speak() {
+		echo "${this[name]} says 'generic animal sound'"
+	}
+
+	DeclareClass Dog : Animal
+	function Dog::speak() {
+		echo "${this[name]} says 'woof'"
+	}
+
+	DeclareClass Cat : Animal
+	function Cat::speak() {
+		echo "${this[name]} says 'meow'"
+	}
+
+	declare -A spot;     ConstructObject Dog spot     "Spot"
+	declare -A whiskers; ConstructObject Cat whiskers "Whiskers"
+
+
+	$spot.speak
+	$whiskers.speak
+
+	$ bash /tmp/test.sh
+	Spot says 'woof'
+	Whiskers says 'meow'

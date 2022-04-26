@@ -138,10 +138,9 @@ void BGString_free(BGString* pStr) {
         pStr->itr=NULL;
     }
 }
-void BGString_append(BGString* pStr, char* s, char* separator) {
+void BGString_appendn(BGString* pStr, char* s, int sLen, char* separator) {
     if (!s || !*s)
         return;
-    int sLen=strlen(s);
     int separatorLen=(pStr->len>0) ? strlen((separator)?separator:"") : 0;
     if (pStr->len+sLen+separatorLen+1 > pStr->allocatedLen) {
         int itrPos=(pStr->itr) ? (pStr->itr -pStr->buf) : -1;
@@ -156,8 +155,14 @@ void BGString_append(BGString* pStr, char* s, char* separator) {
         strcpy(pStr->buf+pStr->len, (separator)?separator:"");
         pStr->len+=separatorLen;
     }
-    strcpy(pStr->buf+pStr->len, s);
+    strncpy(pStr->buf+pStr->len, s, sLen);
     pStr->len+=sLen;
+    pStr->buf[pStr->len]='\0';
+}
+void BGString_append(BGString* pStr, char* s, char* separator) {
+    if (!s || !*s)
+        return;
+    BGString_appendn(pStr, s, strlen(s), separator);
 }
 void BGString_replaceWhitespaceWithNulls(BGString* pStr) {
     for (register int i=0; i<pStr->len; i++)
@@ -1134,12 +1139,18 @@ int _bgclassCall(WORD_LIST* list)
         }
 
         // make the $super.<method> <objRef>
+        // '_bgclassCall <objInstance> <classFrom_METHOD> 1 |'
+        // _METHOD=<className>::<method>
         BGString superObjRef;  BGString_init(&superObjRef, 500);
         BGString_append(&superObjRef, "_bgclassCall ",NULL);
         BGString_append(&superObjRef, objInstance.vThis->name,NULL);
-//        BGString_append(&superObjRef, methodClass," ");
+        char* mClass=_METHOD;
+        char* mClassEnd=mClass; while (*mClassEnd && (*mClassEnd!=':' || *(mClassEnd+1)!=':') ) mClassEnd++;
+        BGString_appendn(&superObjRef, mClass, (mClassEnd-mClass)," ");
+        BGString_append(&superObjRef, " 1 | ",NULL);
 
         bind_variable_value(make_local_variable("super",0), superObjRef.buf, 0);
+        BGString_free(&superObjRef);
     }
 
 

@@ -1,4 +1,5 @@
-*.o
-*.so
+Makefile
+bin/*.so
+build/*.o
 .bglocal/*
 tags
