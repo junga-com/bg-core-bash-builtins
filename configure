@@ -78,27 +78,102 @@ builtinList="$(ls -1 *.c 2>/dev/null)"
 	assertError "No <builtin>.c files found in this project. It is assumed that <builtin>.c will be in the root project folder"
 }
 
+
+makeScript='
+# the intermediate <builtinName>.o files will be placed in the $(OBJ) folder. It can be set to empty or ./ to put them in the top folder
+# if OBJ is not empty, it must end in a /
+# If OBJ is empty, make will consider <builtinName>.o intermediate files and remove them after the target is built
+#OBJ = bin/obj/
+#OBJ = .bglocal/obj/
+#OBJ =
+
+# the <builtinName>.so output files will be placed in the $(BIN) folder. It can be set to empty or ./ to put them in the top folder
+# if BIN is not empty, it must end in a /
+#BIN =
+BIN = bin/
+
+# tell make to forget all of its default implicit rules. we want to specify the cmdline for everything we build
+.SUFFIXES:
+
+all: $(OBJ) $(BIN) %builtinSOList%
+
+$(BIN) :
+	mkdir -p $(BIN)
+$(OBJ) :
+	mkdir -p $(OBJ)
+
+# Note: This implicit .c to .o rule builds it as a shared object. If we support libraries, we probably will have to
+# change this to distinguish between the .c which are the main builtins and others which are modules that will be linked in.
+%.o : %.c
+	# this should be the same cmd as in the ".c.o:" target of examples/loadables/Makefile.inc except the output is "$(OBJ)$@" instead of "$@"
+	%compilerCommand%
+
+$(BIN)%.so : %.o
+	# this should be the same cmd as in the "example:" target of examples/loadables/Makefile.inc except the input is "$(OBJ)$<" instead of "example.o"
+	%linkerCommand%
+
+
+clean:
+	@$(RM) $(OBJ)*.o  $(BIN)*.so
+
+.DELETE_ON_ERROR:
+.PHONEY: all clean
+'
+
+
 # copy and modify the Makefile.inc
-echo "$builtinList" | awk '
+echo "$builtinList" | awk -v makeScript="$makeScript" '
 	@include "bg_core.awk"
 	BEGIN {
 		printf("# WARNING: This file is overwritten each time you run ./configure so you probably dont want to edit it directly \n");
 		while ((getline builtinSource <"/dev/stdin") >0) {
 			builtinList[builtinSource]=1
 		}
+		# set these equal to the cmdline from the ".c.o:" and "example:" targets respectively from the /usr/lib/bash/Makefile.inc
+		# if they change
+		compilerCommand="	$(SHOBJ_CC) $(SHOBJ_CFLAGS) $(CCFLAGS) $(INC) -c -o $@ $<";
+		linkerCommand="	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ example.o $(SHOBJ_LIBS)";
 	}
 
+	# capture all lines up until the targets that we will replace
 	# assume that all: is still at the bottom and that it and everything below it is specific to the example.c builtin (that we will remove)
-	$1=="all:" {stopCopying=NR}
+	$1=="all:"  {stopCopying=NR}
+	$1==".c.o:" {stopCopying=NR}
+	$1~/^[^[:space:]]+[[:space:]]?:[^=]/ {stopCopying=NR}
 	stopCopying=="" {origLines[NR]=$0}
 
+	# its ok if the input Makefile.inc no longer has this target but if it does, we print a warning if it has changed
+	# catpure the build command for the building example: from example.o so that we can modify it to be general (an implicit rule)
+	$1==".c.o:" {
+		getline
+		if (compilerCommand != $0)
+			printf("WARNING: the compiler %s command under the '%s' target has changed since this configure script was written. You may need to update the '%s' rule in ./configure \n", "build", $1, "%.o : %.c") > "/dev/stdout"
+		compilerCommand=$0
+	}
+
+	# its ok if the input Makefile.inc no longer has this target but if it does, we print a warning if it has changed
 	# catpure the build command for the building example: from example.o so that we can modify it to be general (an implicit rule)
 	$1=="example:" {
 		getline
-		buildLine=$0
+		if (linkerCommand != $0)
+			printf("WARNING: the %s build command under the '%s' target has changed since this configure script was written. You may need to update the '%s' rule in ./configure \n", "linker", $1, "$(BIN)%.so : %.o") > "/dev/stdout"
+		linkerCommand=$0
 	}
 
 	END {
+		# thes commands come from the original Makefile.inc but we need to fixup the input/output to be generic and in the $(OBJ) folder
+		compilerCommand=gensub(/[$][@]/,   "$(OBJ)$@", "g",compilerCommand);
+		linkerCommand  =gensub(/example.o/,"$(OBJ)$<", "g",linkerCommand);
+
+		makeScript=gensub(/%compilerCommand%/,compilerCommand,"g",makeScript);
+		makeScript=gensub(/%linkerCommand%/,  linkerCommand,  "g",makeScript);
+
+		builtinSOList=""
+		for (builtinName in builtinList)
+			builtinSOList=builtinSOList" $(BIN)"gensub(/[.]c$/,".so","g",builtinName)
+		makeScript=gensub(/%builtinSOList%/,  builtinSOList,  "g",makeScript);
+
+
 		# if the Makefile.inc no longer has an explicit all: rule, then we can use it as a an include file.
 		if (!stopCopying) {
 			printf("\ninclude %s\n\n", FILENAME);
@@ -109,18 +184,8 @@ echo "$builtinList" | awk '
 				printf("%s\n",origLines[i]);
 		}
 
-		# now add an implicit pattern rule to build the final .so targets from .o files
-		printf("%%.so : %%.o \n");
-		printf("%s\n\n", gensub(/example.o/,"$<","g",buildLine));
-
-		# now add an 'all:' target that builds all of the <builtin>.so from this builtin project
-		printf("\nall: ");
-		for (builtin in builtinList)
-			printf("%s ", gensub(/[.]c$/,".so","g",builtin));
-		printf("\n\n");
-
-		# now add a clean: target
-		printf("clean: \n\t@$(RM) *.o *.so");
+		# print our script at the end
+		printf("%s\n", makeScript);
 	}
 ' "$makefileLocation" > ./Makefile
 result=$?
@@ -135,3 +200,61 @@ else
 	echo "Success"
 fi
 echo
+
+
+# # working solution 1
+# BIN=bin
+# OBJ=$(BIN)/obj
+#
+#
+# %.o : %.c
+# 	$(SHOBJ_CC) $(SHOBJ_CFLAGS) $(CCFLAGS) $(INC) -c -o $(OBJ)/$@ $<
+#
+# $(BIN)/%.so : %.o
+# 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ $(OBJ)/$< $(SHOBJ_LIBS)
+#
+# all: $(BIN)/bgObjects.so
+#
+# clean:
+# 	@$(RM) $(OBJ)/*.o $(BIN)/*.so
+#
+# .DELETE_ON_ERROR:
+#
+# .PHONEY: all clean
+
+
+# # working solution 2
+# # the intermediate <builtinName>.o files will be placed in the $(OBJ) folder. It can be set to empty or ./ to put them in the top folder
+# # if OBJ is not empty, it must end in a '/'
+# # If OBJ is empty, make will consider <builtinName>.o intermediate files and remove them after the target is built
+# #OBJ = bin/obj/
+# #OBJ = .bglocal/obj/
+# #OBJ =
+#
+# # the <builtinName>.so output files will be placed in the $(BIN) folder. It can be set to empty or ./ to put them in the top folder
+# # if BIN is not empty, it must end in a '/'
+# BIN = bin/
+# #BIN = ./
+#
+# # tell make to forget all of its default implicit rules. we want to specify the cmdline for everything we build
+# .SUFFIXES:
+#
+# all: $(OBJ) $(BIN) $(BIN)bgObjects.so
+#
+# $(BIN) :
+# 	mkdir -p $(BIN)
+# $(OBJ) :
+# 	mkdir -p $(OBJ)
+#
+# %.o : %.c
+# 	$(SHOBJ_CC) $(SHOBJ_CFLAGS) $(CCFLAGS) $(INC) -c -o $(OBJ)$@ $<
+#
+# $(BIN)%.so : %.o
+# 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ $(OBJ)$< $(SHOBJ_LIBS)
+#
+#
+# clean:
+# 	@$(RM) $(OBJ)*.o  $(BIN)*.so
+#
+# .DELETE_ON_ERROR:
+# .PHONEY: all clean
