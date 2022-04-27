@@ -92,15 +92,20 @@ makeScript='
 #BIN =
 BIN = bin/
 
+OUTPUTFILES = %builtinSOList%
+
+INSTALLDIR = $(DESTDIR)/usr/lib/bash
+
 # tell make to forget all of its default implicit rules. we want to specify the cmdline for everything we build
 .SUFFIXES:
 
-all: $(OBJ) $(BIN) %builtinSOList%
+# tell make to run the entire recipe as one script
+.ONESHELL:
 
-$(BIN) :
-	mkdir -p $(BIN)
-$(OBJ) :
-	mkdir -p $(OBJ)
+all: $(OBJ) $(BIN) $(OUTPUTFILES)
+
+$(BIN) $(OBJ) $(INSTALLDIR) :
+	mkdir -p $@
 
 # Note: This implicit .c to .o rule builds it as a shared object. If we support libraries, we probably will have to
 # change this to distinguish between the .c which are the main builtins and others which are modules that will be linked in.
@@ -114,10 +119,14 @@ $(BIN)%.so : %.o
 
 
 clean:
-	@$(RM) $(OBJ)*.o  $(BIN)*.so
+	-@$(RM) $(OBJ)*.o  $(BIN)*.so
+
+install: $(INSTALLDIR) all
+	prefixCmd=""; [ ! -w "$(INSTALLDIR)" ] && prefixCmd="sudo "
+	$$prefixCmd cp  $(OUTPUTFILES) $(INSTALLDIR)
 
 .DELETE_ON_ERROR:
-.PHONEY: all clean
+.PHONEY: all clean install
 '
 
 
@@ -200,61 +209,3 @@ else
 	echo "Success"
 fi
 echo
-
-
-# # working solution 1
-# BIN=bin
-# OBJ=$(BIN)/obj
-#
-#
-# %.o : %.c
-# 	$(SHOBJ_CC) $(SHOBJ_CFLAGS) $(CCFLAGS) $(INC) -c -o $(OBJ)/$@ $<
-#
-# $(BIN)/%.so : %.o
-# 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ $(OBJ)/$< $(SHOBJ_LIBS)
-#
-# all: $(BIN)/bgObjects.so
-#
-# clean:
-# 	@$(RM) $(OBJ)/*.o $(BIN)/*.so
-#
-# .DELETE_ON_ERROR:
-#
-# .PHONEY: all clean
-
-
-# # working solution 2
-# # the intermediate <builtinName>.o files will be placed in the $(OBJ) folder. It can be set to empty or ./ to put them in the top folder
-# # if OBJ is not empty, it must end in a '/'
-# # If OBJ is empty, make will consider <builtinName>.o intermediate files and remove them after the target is built
-# #OBJ = bin/obj/
-# #OBJ = .bglocal/obj/
-# #OBJ =
-#
-# # the <builtinName>.so output files will be placed in the $(BIN) folder. It can be set to empty or ./ to put them in the top folder
-# # if BIN is not empty, it must end in a '/'
-# BIN = bin/
-# #BIN = ./
-#
-# # tell make to forget all of its default implicit rules. we want to specify the cmdline for everything we build
-# .SUFFIXES:
-#
-# all: $(OBJ) $(BIN) $(BIN)bgObjects.so
-#
-# $(BIN) :
-# 	mkdir -p $(BIN)
-# $(OBJ) :
-# 	mkdir -p $(OBJ)
-#
-# %.o : %.c
-# 	$(SHOBJ_CC) $(SHOBJ_CFLAGS) $(CCFLAGS) $(INC) -c -o $(OBJ)$@ $<
-#
-# $(BIN)%.so : %.o
-# 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ $(OBJ)$< $(SHOBJ_LIBS)
-#
-#
-# clean:
-# 	@$(RM) $(OBJ)*.o  $(BIN)*.so
-#
-# .DELETE_ON_ERROR:
-# .PHONEY: all clean
