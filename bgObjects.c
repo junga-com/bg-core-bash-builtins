@@ -2,9 +2,6 @@
 
 /* See Makefile for compilation details. */
 
-// TODO:
-// concepts to ask chet about: invisible vars, bind_variable vs setting a value,
-
 
 #include <config.h>
 
@@ -15,6 +12,9 @@
 #include <stdio.h>
 #include <errno.h>
 #include <regex.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "loadables.h"
 #include "variables.h"
@@ -24,6 +24,11 @@
 #if !defined (errno)
 extern int errno;
 #endif
+
+extern int _classUpdateVMT(char* className, int forceFlag);
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Misc Functions
 
 int isNumber(char* string) {
     if (string == 0 || *string=='\0')
@@ -51,6 +56,9 @@ char* savestringn(x,n)
     return p;
 }
 
+
+
+
 SHELL_VAR* find_variableWithSuffix(char* varname, char* suffix) {
     char* buf = xmalloc(strlen(varname)+strlen(suffix)+1);
     strcpy(buf, varname);
@@ -59,6 +67,9 @@ SHELL_VAR* find_variableWithSuffix(char* varname, char* suffix) {
     xfree(buf);
     return vVar;
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// bgtrace
 
 FILE* _bgclassCallTraceFD=NULL;
 
@@ -69,13 +80,13 @@ void bgtraceStatus() {
         printf("bgObjects tracing is OFF\n");
 }
 
-void bgtraceOn() {
+void bgtraceOn(char* location) {
     if (!_bgclassCallTraceFD) {
         _bgclassCallTraceFD=fopen("/tmp/bgtrace.out","a+");
         if (!_bgclassCallTraceFD)
             fprintf(stderr, "FAILED to open trace file '/tmp/bgtrace.out' errno='%d'\n", errno);
         else
-            fprintf(_bgclassCallTraceFD, "BASH bgObjects trace started\n");
+            fprintf(_bgclassCallTraceFD, "BASH bgObjects trace started (%s)\n",location);
     }
 }
 
@@ -89,7 +100,7 @@ void bgtraceOff() {
 
 void traceCntr(WORD_LIST *args) {
     if (args && strcmp(args->word->word, "on")==0) {
-        bgtraceOn();
+        bgtraceOn("traceCntr");
     } else if (args && strcmp(args->word->word, "off")==0) {
         bgtraceOff();
     } else {
@@ -97,17 +108,21 @@ void traceCntr(WORD_LIST *args) {
     }
 }
 
-void bgtrace(char* fmt, ...) {
-    if (!_bgclassCallTraceFD) return;
+int bgtrace(char* fmt, ...) {
+    if (!_bgclassCallTraceFD) return 1;
     va_list args;
     SH_VA_START (args, fmt);
     vfprintf (_bgclassCallTraceFD, fmt, args);
     fflush(_bgclassCallTraceFD);
+    return 1; // so that we can use bgtrace in condition
 }
 
-// BGString - auto growing string buffer that it null terminated but also can contain nulls in the string to make a string list
-//            that can be iterated. A typical senario is getting a whitespace separated string from a SHELL_VAR, turning whitespace
-//            to nulls and then iterating the words.
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// BGString
+// auto growing string buffer that it null terminated but also can contain nulls in the string to make a string list
+// that can be iterated. A typical senario is getting a whitespace separated string from a SHELL_VAR, turning whitespace
+// to nulls and then iterating the words.
 typedef struct {
     char* buf;
     int len;
@@ -188,6 +203,9 @@ char* BGString_nextWord(BGString* pStr) {
 
 
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// BashObjects MemberType
+
 typedef enum {
     mt_unknown,            // we do not (yet) know
     mt_nullVar,            // last member of chain did not exist - syntax tells us a member variable is expected
@@ -259,6 +277,10 @@ int setErrorMsg(char* fmt, ...)
     run_unwind_frame ("bgObjects");
     return (EXECUTION_FAILURE);
 }
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// BashObjRef
 
 typedef struct {
   char oid[255];
@@ -339,6 +361,8 @@ SHELL_VAR* assertClassExists(char* className, int* pErr) {
 }
 
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// BashObj
 
 typedef struct {
   char name[255];
@@ -424,18 +448,43 @@ int BashObj_Init(BashObj* pObj, char* name, char* refClass, char* hierarchyLevel
     return 1;
 }
 
+BashObj* BashObj_copy(BashObj* that) {
+    BashObj* this = xmalloc(sizeof(BashObj));
+    strcpy(this->name, that->name );
+    strcpy(this->ref , that->ref  );
+    this->vThis   = that->vThis     ;
+    this->vThisSys= that->vThisSys  ;
+    this->vCLASS  = that->vCLASS    ;
+    this->vVMT    = that->vVMT      ;
+
+    this->refClass = that->refClass;
+    this->superCallFlag = that->superCallFlag;
+    return this;
+}
+
+BashObj* BashObj_find(char* name, char* refClass, char* hierarchyLevel) {
+    BashObj* pObj = xmalloc(sizeof(BashObj));
+    if (!BashObj_Init(pObj, name, refClass, hierarchyLevel)) {
+        xfree(pObj);
+        return NULL;
+    }
+    return pObj;
+}
+
 // c implementation of the bash library function
 // returns "heap_A_XXXXXXXXX" where X's are random chars
-// TODO: add suppot for passing in attributes like the bash version does
-char* varNewHeapVar() {
+// TODO: add support for passing in attributes like the bash version does
+char* varNewHeapVar(char* attributes) {
     static char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     int charsetSize = (int) (sizeof(charset) -1);
 
-    int length=16;
+    int length=16+strlen(attributes);
     char* buf = xmalloc(length+1);
     if (!buf)
         return NULL;
-    strcpy(buf, "heap_A_");
+    strcpy(buf, "heap_");
+    strcat(buf, attributes);
+    strcat(buf, "_");
 
     for (int n=strlen(buf);n < length;n++) {
         buf[n] = charset[rand() % charsetSize];
@@ -447,6 +496,7 @@ char* varNewHeapVar() {
 
 BashObj* BashObj_makeNewObject(char* _CLASS, ...) {
     //TODO: DeclareClassEnd "${_CLASS%%::*}"
+    _classUpdateVMT(_CLASS, 0);
 
     BashObj* newObj = xmalloc(sizeof(BashObj));
     newObj->refClass=NULL;
@@ -462,22 +512,30 @@ BashObj* BashObj_makeNewObject(char* _CLASS, ...) {
 
     // TODO: deal with the destination var? or maybe in C we do that at a higher level?
 
+    char* oidAttributes = assoc_reference( assoc_cell(newObj->vCLASS),"oidAttributes");
+    int isNumericArray=0;
+    for (char* c=oidAttributes; c && *c; c++)
+        if (*c=='a')
+            isNumericArray=1;
 
-    char* _OID = varNewHeapVar();
+    char* _OID = varNewHeapVar((isNumericArray)?"a":"A");
     strcpy(newObj->name, _OID);
 
     char* _OID_sys = xmalloc(strlen(_OID)+4+1);
     strcpy(_OID_sys, _OID); strcat(_OID_sys, "_sys");
 
-    newObj->vThis = make_new_assoc_variable(_OID);
+    if (isNumericArray)
+        newObj->vThis = make_new_array_variable(_OID);
+    else
+        newObj->vThis = make_new_assoc_variable(_OID);
     newObj->vThisSys = make_new_assoc_variable(_OID_sys);
 
     BashObj_makeRef(newObj);
 
-    assoc_insert (assoc_cell (newObj->vThisSys), savestring ("_OID"), _OID);
-    assoc_insert (assoc_cell (newObj->vThisSys), savestring ("_CLASS"), _CLASS);
-    assoc_insert (assoc_cell (newObj->vThisSys), savestring ("_Ref"), newObj->ref);
-    assoc_insert (assoc_cell (newObj->vThisSys), savestring ("0"), newObj->ref);
+    assoc_insert (assoc_cell (newObj->vThisSys), savestring("_OID"), _OID);
+    assoc_insert (assoc_cell (newObj->vThisSys), savestring("_CLASS"), _CLASS);
+    assoc_insert (assoc_cell (newObj->vThisSys), savestring("_Ref"), newObj->ref);
+    assoc_insert (assoc_cell (newObj->vThisSys), savestring("0"), newObj->ref);
     char* defIdxSetting = assoc_reference( assoc_cell(newObj->vCLASS),"defaultIndex");
     if (defIdxSetting && strcmp(defIdxSetting,"on")==0)
         assoc_insert (assoc_cell (newObj->vThis), savestring ("0"), newObj->ref);
@@ -488,11 +546,12 @@ BashObj* BashObj_makeNewObject(char* _CLASS, ...) {
     // local -n this="$_OID"
 
     xfree(_OID);
+    xfree(_OID_sys);
     return newObj;
 }
 
 void BashObj_dump(BashObj* pObj) {
-    printf("BashObject: '%s'\n", (pObj)?pObj->name:"<nonexistent>");
+    printf("BashObj: '%s'\n", (pObj)?pObj->name:"<nonexistent>");
     if (!pObj)
         return;
     printf("   vThis:    %s\n", (pObj->vThis)?pObj->vThis->name:"<nonexistent>");
@@ -512,7 +571,7 @@ char* BashObj_getMemberValue(BashObj* pObj, char* memberName) {
             //setErrorMsg("memberName is not a valid numeric array index\n\tmemberName='%s'\n", memberName);
             return NULL;
         }
-        return array_reference(array_cell(pObj->vThis),    array_expand_index (pObj->vThis, memberName, strlen(memberName), 0));
+        return array_reference(array_cell(pObj->vThis),    array_expand_index(pObj->vThis, memberName, strlen(memberName), 0));
     }else {
         return assoc_reference(assoc_cell(pObj->vThis),    memberName);
     }
@@ -522,15 +581,49 @@ int BashObj_setMemberValue(BashObj* pObj, char* memberName, char* value) {
     if (*memberName == '_'){
         assoc_insert (assoc_cell (pObj->vThisSys), savestring(memberName), value);
     }else if (array_p(pObj->vThis)) {
-        if (!isNumber(memberName)) {
-            //setErrorMsg("memberName is not a valid numeric array index\n\tmemberName='%s'\n", memberName);
-            return EXECUTION_FAILURE;
-        }
-        bind_array_element(pObj->vThis, array_expand_index (pObj->vThis, memberName, strlen(memberName), 0), value, 0);
+        arrayind_t index = (isNumber(memberName))
+            ? atoi(memberName)
+            : 1+array_max_index(array_cell(pObj->vThis));
+        bind_array_element(pObj->vThis, index, value, 0);
     }else {
         assoc_insert (assoc_cell (pObj->vThis),    savestring(memberName), value);
     }
     return EXECUTION_SUCCESS;
+}
+
+void BashObj_setClass(BashObj* pObj, char* newClassName) {
+bgtrace("BashObj_setClass(%s, %s)\n", pObj->name, newClassName);
+    // $class.isDerivedFrom "${oldStatic[name]}" || assertError -v this -v originalClass:oldStatic[name] -v newClass:newClassName "Can not set class to one that is not a descendant to the original class"
+
+    // if its already newClassName, there is nothing to do
+    if (strcmp(pObj->vCLASS->name, newClassName)==0)
+        return;
+
+    SHELL_VAR* vNewClass = assertClassExists(newClassName, NULL);
+    if (!vNewClass)
+        return;
+
+    pObj->vCLASS = vNewClass;
+    BashObj_makeRef(pObj);
+
+    assoc_insert (assoc_cell(pObj->vThisSys), savestring("_CLASS"), vNewClass->name);
+    assoc_insert (assoc_cell(pObj->vThisSys), savestring("_Ref"), pObj->ref);
+    assoc_insert (assoc_cell(pObj->vThisSys), savestring("0"), pObj->ref);
+    char* defIdxSetting = assoc_reference( assoc_cell(pObj->vCLASS),"defaultIndex");
+    if (defIdxSetting && strcmp(defIdxSetting,"on")==0)
+        assoc_insert(assoc_cell (pObj->vThis), savestring ("0"), pObj->ref);
+    else
+        assoc_remove( assoc_cell(pObj->vThis), "0" );
+
+    _classUpdateVMT(newClassName, 0);
+bgtrace("BashObj_setClass(%s, %s)\n", pObj->name, newClassName);
+
+	// # invoke the _onClassSet methods that exist for any Class in this hierarchy
+	// local -n static="$_CLASS"
+	// local -n _VMT="${_this[_VMT]:-${_this[_CLASS]}_vmt}"
+	// local _cname; for _cname in ${class[classHierarchy]}; do
+	// 	type -t $_cname::_onClassSet &>/dev/null && $_cname::_onClassSet "$@"
+	// done
 }
 
 
@@ -638,12 +731,17 @@ void assoc_copyElements(HASH_TABLE* dest, HASH_TABLE* source) {
     }
 }
 
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// BashClass
+
 typedef struct {
     SHELL_VAR* vClass;
     SHELL_VAR* vVMT;
 } BashClass;
 
-int BashClass_init(BashClass* pCls, char* className) {
+int BashClass_init(BashClass* pCls, char* className)
+{
     pCls->vClass = find_variable(className);
     if (!pCls->vClass)
         return setErrorMsg("bultin _classUpdateVMT: global class array does not exist for class '%s'\n", className);
@@ -669,15 +767,80 @@ int BashClass_isVMTDirty(BashClass* pCls, char* currentCacheNumStr) {
     return (!baseClassNameVmtCacheNum || strcmp(baseClassNameVmtCacheNum, currentCacheNumStr)!=0);
 }
 
+void DeclareClassEnd(char* className)
+{
+    char* tstr = xmalloc(strlen(className)+10);
+    strcpy(tstr, className);
+    strcat(tstr, "_initData");
+    SHELL_VAR* vInitData = find_variable(tstr);
+    if (!vInitData)
+        return;
+    xfree(tstr);
+
+//    char* baseClass = SHELL_VAR
+}
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ObjMemberItr
+
+typedef enum { ovt_normal, ovt_sys, ovt_both } ObjVarType;
+typedef struct {
+    BashObj* pObj;
+    ObjVarType type;
+    HASH_TABLE* table;
+    BUCKET_CONTENTS* item;
+    int position;
+} ObjMemberItr;
+
+BUCKET_CONTENTS* ObjMemberItr_next(ObjMemberItr* pI) {
+    // first iterate the current bucket linked list if we are not at the end
+    if (pI->item && pI->item->next) {
+        pI->item = pI->item->next;
+
+    // next, goto the start linked list of the next non-empty bucket
+    } else if (HASH_ENTRIES (pI->table) != 0 && pI->table && pI->position < pI->table->nbuckets) {
+        while ((pI->position < pI->table->nbuckets) && 0==(pI->item=hash_items(pI->position, pI->table))) pI->position++;
+        pI->position++;
+    } else {
+        pI->item = NULL;
+    }
+
+    // if we are at the end of vThis and vThisSys is different and we are not just iterating normal members, go to the start of the
+    // vThisSys table
+    if (!pI->item && pI->table != assoc_cell(pI->pObj->vThisSys) && pI->type!=ovt_normal) {
+        pI->table = assoc_cell(pI->pObj->vThisSys);
+        pI->position=0;
+        while ((pI->position < pI->table->nbuckets) && 0==(pI->item=hash_items(pI->position, pI->table))) pI->position++;
+        pI->position++;
+    }
+    return pI->item;
+}
+BUCKET_CONTENTS* ObjMemberItr_init(ObjMemberItr* pI, BashObj* pObj, ObjVarType type) {
+    pI->pObj=pObj;
+    pI->type=type;
+    pI->table = (type!=ovt_sys) ? assoc_cell(pI->pObj->vThis) : assoc_cell(pI->pObj->vThisSys);
+    pI->position=0;
+    pI->item=NULL;
+    pI->item = ObjMemberItr_next(pI);
+    return pI->item;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// CMD: _classUpdateVMT
+
 int _classUpdateVMT(char* className, int forceFlag)
 {
-    begin_unwind_frame ("bgObjects");
+bgtrace("_classUpdateVMT(%s)\n", className);
 
     if (!className || !*className)
         return EXECUTION_FAILURE;
 
     int classNameLen=strlen(className);
     BashClass class; BashClass_init(&class,className);
+//bgtrace("#### %s: baseClass='%s'\n",className,assoc_reference(assoc_cell(class.vClass), "baseClass"));
+bgtrace("#### %s: '%s'\n", className, string_list(assoc_keys_to_word_list(assoc_cell(class.vClass)) ) );
 
     // # force resets the vmtCacheNum of this entire class hierarchy so that the algorithm will rescan them all during this run
     if (forceFlag) {
@@ -709,6 +872,7 @@ int _classUpdateVMT(char* className, int forceFlag)
     // char* classVmtCacheNum = assoc_reference(assoc_cell(class.vClass),"vmtCacheNum");
     // if (!classVmtCacheNum || strcmp(classVmtCacheNum, currentCacheNumStr)!=0) {
     if (BashClass_isVMTDirty(&class, currentCacheNumStr)) {
+bgtrace("2 _classUpdateVMT(%s)\n", className);
        // class[vmtCacheNum]="$currentCacheNum"
         assoc_insert(assoc_cell(class.vClass), savestring("vmtCacheNum"), currentCacheNumStr);
 
@@ -718,7 +882,10 @@ int _classUpdateVMT(char* className, int forceFlag)
         // # init the vmt with the contents of the base class vmt (Object does not have a baseClassName)
         // each baseclass will have _classUpdateVMT(baseClassName) called to recursively make everything uptodate.
         char* baseClassName = assoc_reference(assoc_cell(class.vClass), "baseClass");
+bgtrace("3 baseClassName='%s'    class.vClass->name='%s' \n", baseClassName, class.vClass->name);
+bgtrace("4 '%s'\n", string_list(assoc_keys_to_word_list(assoc_cell(class.vClass)) ) );
         if (baseClassName && *baseClassName) {
+bgtrace("   _classUpdateVMT doing '%s'\n", baseClassName);
             BashClass baseClass; BashClass_init(&baseClass,baseClassName);
 
             // # update the base class vmt if needed
@@ -786,13 +953,16 @@ int _classUpdateVMT(char* className, int forceFlag)
     return EXECUTION_SUCCESS;
 }
 
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// CMD: _bgclassCall
+
 int _bgclassCall(WORD_LIST* list)
 {
     begin_unwind_frame ("bgObjects");
 
     if (!list || list_length(list) < 3) {
         printf ("Error - not enough arguments (%d). See usage..\n\n", (list)?list_length(list):0);
-        builtin_usage();
         return (EX_USAGE);
     }
 
@@ -845,7 +1015,7 @@ int _bgclassCall(WORD_LIST* list)
         list = list->next;
     }
 
-    bgtrace("\n01234567890123456789\n%s\n",objSyntaxStart);
+    //bgtrace("\n01234567890123456789\n%s\n",objSyntaxStart);
 
 
     // These variables are static so that we only compile the pattern once
@@ -886,7 +1056,7 @@ int _bgclassCall(WORD_LIST* list)
 
 
     // _chainedObjOrMember is the beginning of objSyntaxStart up to the start of the match (start of op)
-    int objSyntaxStartLen=strlen(objSyntaxStart); // to be able to trace the whole thing including \0 we place
+    //int objSyntaxStartLen=strlen(objSyntaxStart); // to be able to trace the whole thing including \0 we place
     char* _chainedObjOrMember=objSyntaxStart;
     bind_variable_value(make_local_variable("_chainedObjOrMember",0), savestringn(_chainedObjOrMember, matches[0].rm_so), 0);
     char* _chainedObjOrMemberEnd=objSyntaxStart + matches[0].rm_so;
@@ -902,11 +1072,11 @@ int _bgclassCall(WORD_LIST* list)
         if (_chainedObjOrMember[i]=='.' || _chainedObjOrMember[i]=='[')
             _chainedObjOrMember[i]='\0';
 
-    if (_bgclassCallTraceFD) {
-        for (int i=0; i<objSyntaxStartLen; i++)
-            bgtrace("%c",(objSyntaxStart[i]=='\0')?'_':objSyntaxStart[i]);
-        bgtrace("\n");
-    }
+    // if (_bgclassCallTraceFD) {
+    //     for (int i=0; i<objSyntaxStartLen; i++)
+    //         bgtrace("%c",(objSyntaxStart[i]=='\0')?'_':objSyntaxStart[i]);
+    //     bgtrace("\n");
+    // }
 
     // put the expression args into args[] and also 'set -- "${args[@]}"'
     // some operators dont require a space between the operator and the first arg so if match[5] is not empty, create
@@ -1046,11 +1216,11 @@ int _bgclassCall(WORD_LIST* list)
     char* _rsvMemberTypeStr = MemberTypeToString(_rsvMemberType, NULL, _rsvMemberValue);
     add_unwind_protect(xfree,_rsvMemberTypeStr);
 
-    bgtrace("   _memberOp        ='%s'\n", (_memberOp)?_memberOp:"");
-    bgtrace("   _rsvMemberType   ='%s'\n", (_rsvMemberTypeStr)?_rsvMemberTypeStr:"");
-    bgtrace("   _rsvMemberName   ='%s'\n", (_rsvMemberName)?_rsvMemberName:"");
-    bgtrace("   _rsvMemberValue  ='%s'\n", (_rsvMemberValue)?_rsvMemberValue:"");
-    bgtrace("   _memberExpression='%s'\n", (_memberExpression)?_memberExpression:"");
+    // bgtrace("   _memberOp        ='%s'\n", (_memberOp)?_memberOp:"");
+    // bgtrace("   _rsvMemberType   ='%s'\n", (_rsvMemberTypeStr)?_rsvMemberTypeStr:"");
+    // bgtrace("   _rsvMemberName   ='%s'\n", (_rsvMemberName)?_rsvMemberName:"");
+    // bgtrace("   _rsvMemberValue  ='%s'\n", (_rsvMemberValue)?_rsvMemberValue:"");
+    // bgtrace("   _memberExpression='%s'\n", (_memberExpression)?_memberExpression:"");
 
     //[[ "$_rsvMemberType" =~ ^invalidExpression ]] && assertObjExpressionError ...
     //case ${_memberOp:-defaultOp}:${_rsvMemberType} in
@@ -1096,6 +1266,7 @@ int _bgclassCall(WORD_LIST* list)
         xfree(_memberOp); _memberOp=savestring("");
     }
 
+
     if (_rsvMemberType==mt_method && strcmp(_memberOp,"")==0) {
 
         _classUpdateVMT(objInstance.vCLASS->name ,0);
@@ -1118,21 +1289,22 @@ int _bgclassCall(WORD_LIST* list)
         }
         bind_variable_value(make_local_variable("_METHOD",0), (_METHOD)?_METHOD:"", 0);
 
-
+        // make local namerefs to the oid's of any object members
         if (assoc_p(objInstance.vThis)) {
-            HASH_TABLE* table = assoc_cell(objInstance.vThis);
-            register int i;
-            BUCKET_CONTENTS *item;
-            if (table != 0 && HASH_ENTRIES (table) != 0) {
-                for (i = 0; i < table->nbuckets; i++) {
-                    for (item = hash_items (i, table); item; item = item->next) {
-                        if (*item->key!='_' && strcmp(item->key,"0")!=0 && item->data && strncmp(item->data, "_bgclassCall",12)==0) {
-                            char* memOid = extractOID(item->data);
-                            SHELL_VAR* vMemOid=make_local_variable(item->key,0);
-                            VSETATTR(vMemOid, att_nameref);
-                            vMemOid = bind_variable_value(vMemOid,memOid, 0);
-                            xfree(memOid);
-                        }
+            ObjMemberItr i;
+            for (BUCKET_CONTENTS *item=ObjMemberItr_init(&i,&objInstance, ovt_both); item; item=ObjMemberItr_next(&i)) {
+                if (strcmp(item->key,"0")!=0 && strcmp(item->key,"_Ref")!=0 && item->data ) {
+                    if (strncmp(item->data, "_bgclassCall",12)==0) {
+                        //bgtraceOn(); bgtrace("!!! item->key='%s'\n", item->key);
+                        char* memOid = extractOID(item->data);
+                        SHELL_VAR* vMemOid=make_local_variable(item->key,0);
+                        VSETATTR(vMemOid, att_nameref);
+                        vMemOid = bind_variable_value(vMemOid,memOid, 0);
+                        xfree(memOid);
+                    } else if (strncmp(item->data, "heap_",5)==0) {
+                        SHELL_VAR* vMemOid=make_local_variable(item->key,0);
+                        VSETATTR(vMemOid, att_nameref);
+                        vMemOid = bind_variable_value(vMemOid,item->data, 0);
                     }
                 }
             }
@@ -1166,6 +1338,693 @@ int _bgclassCall(WORD_LIST* list)
 
 
 
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// JSON String escaping
+
+
+// usage: jsonEscape <varname1> [...<varnameN>}
+char* jsonEscape(char* s)
+{
+    char* sOut=xmalloc(strlen(s)*2+2);
+    char* cOut=sOut;
+    for (char* c=s; c && *c;) {
+        switch (*c) {
+            case '\\':
+            case '"':
+            case '/':
+            case '\b':
+            case '\f':
+            case '\n':
+            case '\r':
+            case '\t':
+                *cOut++='\\';
+                break;
+        }
+        *cOut++=*c;
+    }
+    return sOut;
+}
+
+
+// usage: jsonUnescape <varname1> [...<varnameN>}
+void jsonUnescape(char* s)
+{
+    if (!s || !*s)
+        return;
+    int slen=strlen(s);
+    for (char* c=s; c && *c; c++,slen--) {
+        if (*c=='\\') {
+            memmove(c,c+1,slen);
+            slen--;
+            switch (*c) {
+                case 'b': *c = '\b'; break;
+                case 'f': *c = '\f'; break;
+                case 'n': *c = '\n'; break;
+                case 'r': *c = '\r'; break;
+                case 't': *c = '\t'; break;
+                case '\\':
+                case '"':
+                case '/':
+                default:
+                    break;
+            }
+        }
+    }
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// SimpleWordList
+
+typedef struct _SimpleWordList {
+  struct _SimpleWordList* next;
+  char* word;
+} SimpleWordList;
+
+SimpleWordList* SWList_unshift(SimpleWordList* list, char* word) {
+    SimpleWordList* newHead=xmalloc(sizeof(SimpleWordList));
+    newHead->next = list;
+    newHead->word=savestring(word);
+    return newHead;
+}
+// caller needs to free the returned char* eventually
+char* SWList_shift(SimpleWordList** pList) {
+    if (!pList || !*pList)
+        return NULL;
+    char* s=(*pList)->word;
+    SimpleWordList* toFree=*pList;
+    *pList=((*pList)->next);
+    xfree(toFree);
+    return s;
+}
+void SWList_print(SimpleWordList* list) {
+    while (list) {
+        fprintf(_bgclassCallTraceFD, "'%s' ",list->word);
+        list=list->next;
+    }
+    fprintf(_bgclassCallTraceFD, "\n");
+}
+void SWList_free(SimpleWordList** pList) {
+    while (pList && *pList) {
+        SimpleWordList* toFree=*pList;
+        *pList=((*pList)->next);
+        xfree(toFree->word);
+        xfree(toFree);
+    }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// BGObjectStack
+
+typedef struct _BGObjectStack {
+  struct _BGObjectStack* next;
+  BashObj* pObj;
+} BGObjectStack;
+
+BGObjectStack* BGObjectStack_unshift(BGObjectStack* list, BashObj* pObj) {
+    BGObjectStack* newHead=xmalloc(sizeof(BGObjectStack));
+    newHead->next = list;
+    newHead->pObj=pObj;
+    return newHead;
+}
+BashObj* BGObjectStack_shift(BGObjectStack** pList) {
+    if (!pList || !*pList)
+        return NULL;
+    BashObj* pObj=(*pList)->pObj;
+    BGObjectStack* toFree=*pList;
+    *pList=((*pList)->next);
+    xfree(toFree);
+    return pObj;
+}
+void BGObjectStack_print(BGObjectStack* list) {
+    while (list) {
+        fprintf(_bgclassCallTraceFD, "'%s' ",list->pObj->name);
+        list=list->next;
+    }
+    fprintf(_bgclassCallTraceFD, "\n");
+}
+void BGObjectStack_free(BGObjectStack** pList) {
+    while (pList && *pList) {
+        BGObjectStack* toFree=*pList;
+        *pList=((*pList)->next);
+        xfree(toFree);
+    }
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// CMD: restoreObject
+
+// restoreObject <objVar>
+// reads attribute stream from stdin to restore the state of <objVar>
+int restoreObject(WORD_LIST* list) {
+    begin_unwind_frame ("bgObjects");
+
+    if (!list || !list->word) {
+        setErrorMsg("Error - <objVar> is a required argument to restoreObject. See usage..\n\n");
+        builtin_usage();
+        return (EX_USAGE);
+    }
+
+    BashObj* scope = BashObj_find(list->word->word, NULL,NULL);
+    if (!scope) {
+        return setErrorMsg("Error - <objVar> (%s) does not exist\n\n", list->word->word);
+    }
+
+    //SHELL_VAR* vCurrentStack=find_variable("currentStack");
+    BGObjectStack* currentStack=NULL;
+
+    currentStack = BGObjectStack_unshift(currentStack, scope);
+
+    char* ifs_chars = getifs();
+    char *line=NULL, *startToken=NULL, *sepStart=NULL;
+    size_t lineAllocSize=0;
+    while (zgetline(0, &line, &lineAllocSize, '\n', 0)>0) {
+        // bgtrace("        01234567890123456789012345678901234567890\n");
+        // bgtrace("line = '%s'\n", line);
+        startToken=line;
+        // TODO: protect the lines below from running out of input
+        char *valType=NULL, *relName=NULL, *jpath=NULL, *value=NULL;
+        if (*startToken) valType = get_word_from_string(&startToken, ifs_chars, &sepStart);
+        if (*startToken) relName = get_word_from_string(&startToken, ifs_chars, &sepStart);
+        if (*startToken) jpath   = get_word_from_string(&startToken, ifs_chars, &sepStart);
+        if (*startToken) value   = get_word_from_string(&startToken, ifs_chars, &sepStart);
+
+        // Note that relName=="<arrayEl>" when current is an Array (aka json 'list'). BashObj_setMemberValue handles that because
+        // when array_p(vThis) but !isNumber(relName), it will append to the end of the array
+
+        //[ "$valType" == "!ERROR" ] && assertError -v objRefVar -v file "jsonAwk returned an error reading restoration file"
+        if (strcmp(valType,"!ERROR")==0) {
+            return setErrorMsg("error: Object::fromJSON: awk script ended with non-zero exit code\n");
+        }
+
+        // value="${value//%20/ }"
+        for (char* c=value; c && *c;) {
+            if (strncmp(c,"%20",3)==0) {
+                *c++=' ';
+                memmove(c,c+2, strlen(c+2)+1);
+            } else
+                c++;
+        }
+
+        jsonUnescape(value);
+
+        char* className=NULL;
+        if (strcmp(valType,"startObject")==0) {
+            className="Object";
+        } else if (strcmp(valType,"startList")==0) {
+            className="Array";
+        }
+        if (className) {
+            // ConstructObject "$className" currentStack[0]
+            BashObj* subObj = BashObj_makeNewObject(className);
+            BashObj_setMemberValue(currentStack->pObj, relName, subObj->ref);
+            currentStack = BGObjectStack_unshift(currentStack, subObj);
+
+        } else if (strcmp(valType,"endObject")==0 || strcmp(valType,"endList")==0) {
+            BashObj* temp = BGObjectStack_shift(&currentStack);
+            xfree(temp);
+
+        } else if (strcmp(valType,"tObject")==0 || strcmp(valType,"tArray")==0) {
+            // there is nothing we need to do for these values type because the start* and end* types encompasses them
+
+        } else if (strcmp(relName,"_OID")==0) {
+            // // use _OID to update the objDictionary so that we can fixup relative objRefs
+            // char* sessionOID = value;
+            // objDictionary[sessionOID]=currentStack->pObj->name;
+            // objDictionary[currentStack->pObj->name]=sessionOID;
+
+        } else if (strcmp(relName,"_Ref")==0 || strcmp(relName,"0")==0) {
+            // ignore _Ref and "0" on restore
+
+        } else if (strcmp(relName,"_CLASS")==0) {
+            BashObj_setClass(currentStack->pObj, value);
+
+        } else {
+            // *)	if [[ "$value" =~ _bgclassCall.*sessionOID_[0-9]+ ]]; then
+            //         :
+            //     fi
+            BashObj_setMemberValue(currentStack->pObj,relName, value);
+        }
+
+        xfree(valType);
+        xfree(relName);
+        xfree(jpath);
+        xfree(value);
+    }
+    xfree(line);
+    discard_unwind_frame ("bgObjects");
+    return EXECUTION_SUCCESS;
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// JSONScanner
+// methods defined below
+typedef struct {
+    char* buf;
+    size_t length;
+    char* pos;
+    char* end;
+    char* filename;
+} JSONScanner;
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// JSONType
+typedef enum {
+    jt_object,
+    jt_array,
+    jt_objStart,
+    jt_arrayStart,
+    jt_objEnd,
+    jt_arrayEnd,
+    jt_value,
+    jt_string,
+    jt_number,
+    jt_true,
+    jt_false,
+    jt_null,
+    jt_comma,
+    jt_colon,
+    jt_error,
+    jt_eof
+} JSONType;
+
+#define JSONType_isBashObj(jt) (jt==jt_object || jt==jt_array)
+
+int JSONType_isAValue(JSONType jt) {
+    switch (jt) {
+        case jt_object:
+        case jt_array:
+        case jt_string:
+        case jt_number:
+        case jt_true:
+        case jt_false:
+        case jt_null:
+            return 1;
+        default:
+            return 0;
+    }
+    return 0;
+}
+
+char* JSONTypeToString(JSONType jt) {
+    switch (jt) {
+        case jt_object    : return "jt_object";
+        case jt_array     : return "jt_array";
+        case jt_objStart  : return "jt_objStart";
+        case jt_arrayStart: return "jt_arrayStart";
+        case jt_objEnd    : return "jt_objEnd";
+        case jt_arrayEnd  : return "jt_arrayEnd";
+        case jt_value     : return "jt_value";
+        case jt_string    : return "jt_string";
+        case jt_number    : return "jt_number";
+        case jt_true      : return "jt_true";
+        case jt_false     : return "jt_false";
+        case jt_null      : return "jt_null";
+        case jt_comma     : return "jt_comma";
+        case jt_colon     : return "jt_colon";
+        case jt_error     : return "jt_error";
+        case jt_eof       : return "jt_eof";
+    }
+    return "unknown JSONType";
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// JSONToken
+typedef struct {
+    JSONType type;
+    char* value;
+} JSONToken;
+
+#define JSONToken_isDone(this) ((this->type == jt_eof) || (this->type == jt_error))
+#define JSONToken_free(t) do { if (t) { xfree(t->value); xfree(t); }; } while(0)
+
+void JSONToken_print(FILE* fd, JSONToken* this, char* label) {
+    fprintf(fd, "%stype='%s' value='%s'\n", label, JSONTypeToString(this->type), (JSONType_isBashObj(this->type))?  (((BashObj*)this->value)->name ) : this->value);
+    fflush(fd);
+}
+
+char* JSONToken_ToString(JSONToken* this) {
+    static char buf[100];
+    snprintf(buf,100, "%s(%s)", JSONTypeToString(this->type), JSONType_isBashObj(this->type)?"<objOrArray>":this->value);
+    return buf;
+}
+
+JSONToken* JSONToken_make(JSONType type, char* value) {
+    JSONToken* this = xmalloc(sizeof(JSONToken));
+    this->type = type;
+    this->value = savestring(value);
+    return this;
+}
+JSONToken* JSONToken_maken(JSONType type, char* value, int len) {
+    JSONToken* this = xmalloc(sizeof(JSONToken));
+    this->type = type;
+    this->value = savestringn(value, len);
+    return this;
+}
+JSONToken* JSONToken_makeObject(BashObj* pObj) {
+    JSONToken* this = xmalloc(sizeof(JSONToken));
+    this->type = jt_object;
+    this->value = (char*)pObj;
+    return this;
+}
+JSONToken* JSONToken_makeArray(BashObj* pObj) {
+    JSONToken* this = xmalloc(sizeof(JSONToken));
+    this->type = jt_array;
+    this->value = (char*)pObj;
+    return this;
+}
+JSONToken* JSONToken_makeError(JSONScanner* scanner, JSONToken* token, char* fmt, ...) {
+    if (token && token->type==jt_error)
+        return token;
+
+    JSONToken* this = xmalloc(sizeof(JSONToken));
+    this->type = jt_error;
+    char* temp = xmalloc(500);
+
+    size_t bytesLeft=500;
+    this->value = xmalloc(bytesLeft+1);
+    *this->value = '\n';
+
+    if (scanner) {
+        int linePos=1, charPos=1;
+        for (register char* pos=scanner->buf; pos<scanner->pos; pos++, charPos++) {
+            if (*pos == '\n') {
+                linePos++;
+                charPos=1;
+            }
+        }
+        snprintf(this->value, bytesLeft, "error: bgObjects fromJSON: %s(%d:%d) ", scanner->filename, linePos,charPos);
+        bytesLeft-=strlen(this->value);
+    }
+
+    if (token) {
+        if (strlen(token->value) > 30)
+            strcpy(token->value+25, " ... ");
+        snprintf(temp, 500, "(error token:'%s'(%s)) ", JSONTypeToString(token->type), token->value);
+        strncat(this->value, temp, bytesLeft);
+        bytesLeft-=strlen(temp);
+    }
+
+    va_list args;
+    SH_VA_START (args, fmt);
+    vsnprintf(temp, 500, fmt, args);
+    strncat(this->value, temp, bytesLeft);
+    bytesLeft-=strlen(temp);
+
+    int len = strlen(this->value);
+    if (len>=500)
+        len = 499;
+    this->value[len]='\n';
+    this->value[len+1]='\0';
+
+
+    xfree(temp);
+    return this;
+}
+JSONToken* JSONToken_copy(JSONToken* that) {
+    JSONToken* this = xmalloc(sizeof(JSONToken));
+    this->type = that->type;
+    if (this->type==jt_object || this->type==jt_array)
+        this->value = (char*)BashObj_copy((BashObj*)that->value);
+    else
+        this->value = savestring(that->value);
+    return this;
+}
+
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// JSONScanner
+// struct defined above
+JSONScanner* JSONScanner_new(char* inFile) {
+    struct stat finfo;
+    if (stat(inFile, &finfo)!=0)
+        return NULL;
+
+    size_t fileLen = (size_t) finfo.st_size;
+
+    // if we dont have a sane fileLen, the file is invalid. This checks for empty and files that are too large
+    if (fileLen<=0 || fileLen != finfo.st_size || fileLen+1 < fileLen)
+        return NULL;
+
+    FILE* f = fopen(inFile, "r");
+    if (!f)
+        return NULL;
+
+    JSONScanner* this = xmalloc(sizeof(JSONScanner));
+    this->buf = xmalloc(fileLen+1);
+    if (!this->buf) {
+        xfree(this);
+        return NULL;
+    }
+    this->filename = inFile;
+    this->length = fileLen;
+    this->pos = this->buf;
+    this->end = this->buf+this->length;
+
+    if (fileLen != fread(this->buf, 1, fileLen, f) ) {
+        xfree(this->buf);
+        xfree(this);
+        return NULL;
+    }
+    *this->end = '\0';
+    fclose(f);
+
+    return this;
+}
+
+JSONToken* JSONScanner_getToken(JSONScanner* this) {
+    while ( this->pos < this->end && (*this->pos==' ' || *this->pos=='\t' || *this->pos=='\n' || *this->pos=='\r') ) this->pos++;
+    if (this->pos >= this->end)
+        return JSONToken_make(jt_eof, "EOF");
+    char* end;
+    switch (*this->pos++) {
+        case '{': return JSONToken_make(jt_objStart,    "{");
+        case '}': return JSONToken_make(jt_objEnd,      "}");
+        case '[': return JSONToken_make(jt_arrayStart,  "[");
+        case ']': return JSONToken_make(jt_arrayEnd,    "]");
+        case ',': return JSONToken_make(jt_comma,       ",");
+        case ':': return JSONToken_make(jt_colon,       ":");
+
+        case '"':
+            end = this->pos;
+            while (end < this->end && *end!='"') {
+                end++;
+                if (*end=='"' && *(end-1)=='\\')
+                    end++;
+            }
+            if (*end!='"')
+                return JSONToken_makeError(this,NULL, "Unterminated string");
+            JSONToken* ret = JSONToken_maken(jt_string, this->pos, (end-this->pos));
+            this->pos = end+1;
+            return ret;
+
+        case '0' ... '9':
+        case '-':
+            end = this->pos--;
+            while (end < this->end && ISDIGIT(*end)) end++;
+            if (*end=='.') {
+                end++;
+                if (!ISDIGIT(*end))
+                    return JSONToken_makeError(this,NULL, "Invalid number");
+                while (end < this->end && ISDIGIT(*end)) end++;
+            }
+            if (*end=='E' || *end=='e') {
+                end++;
+                if (*end=='+' || *end=='-') end++;
+                if (!ISDIGIT(*end))
+                    return JSONToken_makeError(this,NULL, "Invalid exponent in number");
+                while (end < this->end && ISDIGIT(*end)) end++;
+            }
+            ret = JSONToken_maken(jt_string, this->pos, (end-this->pos));
+            this->pos = end+1;
+            return ret;
+
+        default:
+            this->pos--;
+            if (strncmp(this->pos,"null",4)==0)
+                return JSONToken_make(jt_null, "<null>");
+            else if (strncmp(this->pos,"true",4)==0)
+                return JSONToken_make(jt_true, "<true>");
+            else if (strncmp(this->pos,"false",5)==0)
+                return JSONToken_make(jt_false, "<false>");
+            else
+                return JSONToken_makeError(this,NULL, "Unknown character '%c'", *this->pos);
+    }
+    return NULL;
+}
+//JSONToken_print(_bgclassCallTraceFD, token, "");
+
+
+JSONToken* JSONScanner_getValue(JSONScanner* this) {
+//bgtraceOn(NULL);
+    static int depth = 0;
+    depth++;
+    JSONToken* jval;
+
+    JSONToken* token = JSONScanner_getToken(this);
+    bgtrace("%*sgetVal start token='%s'\n", depth*3,"",  JSONToken_ToString(token));
+    if (token->type == jt_objStart) {
+        JSONToken_free(token);
+        BashObj* pObj = BashObj_makeNewObject("Object");
+        jval = JSONToken_makeObject(pObj);
+        while ((token = JSONScanner_getToken(this)) && !JSONToken_isDone(token) && token->type!=jt_objEnd) {
+            if (token->type == jt_comma) {
+                JSONToken_free(token);
+                token = JSONScanner_getToken(this);
+            }
+            if (token->type != jt_string) {
+                depth--;
+                return JSONToken_makeError(this, token, "Expected a string");
+            }
+            JSONToken* name = token;
+            bgtrace("%*s |name='%s'\n", depth*3,"",  JSONToken_ToString(token));
+
+            token = JSONScanner_getToken(this);
+            if (token->type != jt_colon) {
+                depth--;
+                return JSONToken_makeError(this, token, "Expected a colon");
+            }
+            JSONToken_free(token);
+
+            JSONToken* value = JSONScanner_getValue(this);
+
+            if (!JSONType_isAValue(value->type)) {
+                depth--;
+                return JSONToken_makeError(this,value, "Unexpected token");
+            }
+
+            if (strcmp(name->value,"_OID")==0) {
+                // // use _OID to update the objDictionary so that we can fixup relative objRefs
+                // char* sessionOID = value;
+                // objDictionary[sessionOID]=currentStack->pObj->name;
+                // objDictionary[currentStack->pObj->name]=sessionOID;
+
+            } else if (strcmp(name->value,"_Ref")==0 || strcmp(name->value,"0")==0) {
+                // ignore _Ref and "0" on restore
+
+            } else if (strcmp(name->value,"_CLASS")==0) {
+                BashObj_setClass(pObj, value->value);
+
+            } else {
+                BashObj_setMemberValue(pObj, name->value, (JSONType_isBashObj(value->type)) ? (((BashObj*)value->value)->ref) : value->value );
+            }
+
+            JSONToken_free(name);
+            JSONToken_free(value);
+        }
+
+    } else if (token->type==jt_arrayStart) {
+        BashObj* pObj = BashObj_makeNewObject("Array");
+        jval = JSONToken_makeObject(pObj);
+        int index=0;
+        JSONToken* element;
+        while ((element = JSONScanner_getValue(this)) && !JSONToken_isDone(element) && element->type!=jt_arrayEnd) {
+            if (element->type == jt_comma) {
+                JSONToken_free(element);
+                element = JSONScanner_getValue(this);
+            }
+
+            char* indexStr = itos(index++);
+            bgtrace("%*s |element[%s]='%s'\n", depth*3,"", indexStr,  JSONToken_ToString(element));
+
+            if (JSONType_isBashObj(element->type))
+                BashObj_setMemberValue(pObj, indexStr, (((BashObj*)element->value)->ref) );
+            else if (JSONType_isAValue(element->type))
+                BashObj_setMemberValue(pObj, indexStr, element->value );
+
+            else {
+                depth--;
+                return JSONToken_makeError(this,element, "Unexpected token");
+            }
+
+            xfree(indexStr);
+            JSONToken_free(element);
+        }
+
+    } else {
+        jval = JSONToken_copy(token);
+    }
+
+    JSONToken_free(token);
+    depth--;
+    return jval;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// bgObjects ConstructObjectFromJson <objVar>
+int ConstructObjectFromJson(WORD_LIST* list) {
+    begin_unwind_frame("bgObjects");
+
+    if (!list || list_length(list) < 2) {
+        setErrorMsg("Error - <objVar> and <restoreFile> are required arguments to ConstructObjectFromJson. See usage..\n\n");
+        return (EX_USAGE);
+    }
+
+    char* objVar = list->word->word;
+    list = list->next;
+    SHELL_VAR* vObjVar = find_variable(objVar);
+    if (!vObjVar) {
+        vObjVar = make_local_variable(objVar,0);
+        VSETATTR(vObjVar, att_nameref);
+    } else {
+    }
+    VUNSETATTR(vObjVar, att_invisible);
+
+    char* jsonFile = list->word->word;
+    list = list->next;
+
+    JSONScanner* scanner = JSONScanner_new(jsonFile);
+    if (! scanner)
+        return setErrorMsg("could not open input file '%s' for reading\n", jsonFile);
+
+    JSONToken* jValue = JSONScanner_getValue(scanner);
+    if (jValue->type == jt_error) {
+        fprintf(stderr, "%s\n", jValue->value);
+        return EXECUTION_FAILURE;
+
+    } else if (!JSONType_isAValue(jValue->type)) {
+        fprintf(stderr, "error: Expected a JSON value but got token='%s(%s)', \n", JSONTypeToString(jValue->type), jValue->value);
+        return EXECUTION_FAILURE;
+
+    // we found an object
+    } else if (JSONType_isBashObj(jValue->type) && nameref_p(vObjVar)) {
+        bind_variable_value(vObjVar,((BashObj*)jValue->value)->name, 0);
+    } else if (JSONType_isBashObj(jValue->type) && (array_p(vObjVar)) ) {
+        bind_array_element(vObjVar,0, ((BashObj*)jValue->value)->ref, 0);
+    } else if (JSONType_isBashObj(jValue->type) && (assoc_p(vObjVar)) ) {
+        assoc_insert(assoc_cell(vObjVar), savestring("0"), ((BashObj*)jValue->value)->ref);
+    } else if (JSONType_isBashObj(jValue->type) ) {
+        bind_variable_value(vObjVar,((BashObj*)jValue->value)->ref, 0);
+
+    // we found a primitive
+    } else if (nameref_p(vObjVar)) {
+        char* transName = varNewHeapVar("");
+        bind_variable_value(make_local_variable(transName,0), jValue->value, 0);
+        bind_variable_value(vObjVar,jValue->value, 0);
+    } else if (array_p(vObjVar)) {
+        bind_array_element(vObjVar,0, jValue->value, 0);
+    } else if (assoc_p(vObjVar)) {
+        assoc_insert(assoc_cell(vObjVar), savestring("0"), jValue->value);
+    } else {
+        bind_variable_value(vObjVar,jValue->value, 0);
+    }
+
+    discard_unwind_frame ("bgObjects");
+    return EXECUTION_SUCCESS;
+}
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// bgObjects <cmd> ....
+// This is the entry point builtin function. It dispatches the call to the specific function based on the first command word
 int bgObjects_builtin (WORD_LIST* list)
 {
     if (!list || !list->word) {
@@ -1187,8 +2046,23 @@ int bgObjects_builtin (WORD_LIST* list)
             list=list->next; if (!list) return (EX_USAGE);
             forceFlag=1;
         }
-        return _classUpdateVMT(list->word->word, forceFlag);
+        begin_unwind_frame("bgObjects");
+        int result = _classUpdateVMT(list->word->word, forceFlag);
+        discard_unwind_frame("bgObjects");
+        return result;
     }
+
+    // bgObjects restoreObject
+    if (strcmp(list->word->word, "restoreObject")==0) {
+        return restoreObject(list->next);
+    }
+
+
+    // bgObjects ConstructObjectFromJson
+    if (strcmp(list->word->word, "ConstructObjectFromJson")==0) {
+        return ConstructObjectFromJson(list->next);
+    }
+
 
     // bgObjects trace on|off|status
     if (strcmp(list->word->word, "trace")==0) {

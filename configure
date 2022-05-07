@@ -109,17 +109,18 @@ $(BIN) $(OBJ) $(INSTALLDIR) :
 
 # Note: This implicit .c to .o rule builds it as a shared object. If we support libraries, we probably will have to
 # change this to distinguish between the .c which are the main builtins and others which are modules that will be linked in.
+# this recipe should be the same cmd as in the ".c.o:" target of examples/loadables/Makefile.inc except the output is "$(OBJ)$@" instead of "$@"
 %.o : %.c
-	# this should be the same cmd as in the ".c.o:" target of examples/loadables/Makefile.inc except the output is "$(OBJ)$@" instead of "$@"
 	%compilerCommand%
 
+# this recipe should be the same cmd as in the "example:" target of examples/loadables/Makefile.inc except the input is "$(OBJ)$<" instead of "example.o"
 $(BIN)%.so : %.o
-	# this should be the same cmd as in the "example:" target of examples/loadables/Makefile.inc except the input is "$(OBJ)$<" instead of "example.o"
 	%linkerCommand%
 
 
 clean:
 	-@$(RM) $(OBJ)*.o  $(BIN)*.so
+	rmdir bin 2>/dev/null
 
 install: $(INSTALLDIR) all
 	prefixCmd=""; [ ! -w "$(INSTALLDIR)" ] && prefixCmd="sudo "
