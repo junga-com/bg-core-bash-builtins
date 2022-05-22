@@ -79,7 +79,11 @@ builtinList="$(ls -1 *.c 2>/dev/null)"
 }
 
 
+# This makeScript will replace the bottom of the examples/loadables/Makefile.inc which contains the example.c targets.
 makeScript='
+
+INC += -I./includeTemp
+
 # the intermediate <builtinName>.o files will be placed in the $(OBJ) folder. It can be set to empty or ./ to put them in the top folder
 # if OBJ is not empty, it must end in a /
 # If OBJ is empty, make will consider <builtinName>.o intermediate files and remove them after the target is built
