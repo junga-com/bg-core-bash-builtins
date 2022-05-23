@@ -69,19 +69,27 @@ fi
 		EOS
 }
 
+# try to install awk if its missing
 type -t awk &>/dev/null || installDependency awk
 type -t awk &>/dev/null || assertError "This command needs 'awk' to modify the Makefile.inc from the bash project to become this project's makefile"
 
-builtinList="$(ls -1 *.c 2>/dev/null)"
 
+# the .c files in the root of this project will build into .so files
+builtinList="$(ls -1 *.c 2>/dev/null)"
 [ "$builtinList" ] || {
 	assertError "No <builtin>.c files found in this project. It is assumed that <builtin>.c will be in the root project folder"
 }
+
+# the .c files in ./lib/ folder will build into .o which will link into all the .so (at this time there is no way an .so can declare
+# which support libraries it needs)
+libraryList="$(ls -1 lib/*.c 2>/dev/null)"
+
 
 
 # This makeScript will replace the bottom of the examples/loadables/Makefile.inc which contains the example.c targets.
 makeScript='
 
+INC += -I./lib
 INC += -I./includeTemp
 
 # the intermediate <builtinName>.o files will be placed in the $(OBJ) folder. It can be set to empty or ./ to put them in the top folder
@@ -97,6 +105,8 @@ INC += -I./includeTemp
 BIN = bin/
 
 OUTPUTFILES = %builtinSOList%
+SOMODULES = %soModulesList%
+LIBMODULES = %libModulesList%
 
 INSTALLDIR = $(DESTDIR)/usr/lib/bash
 
@@ -111,19 +121,20 @@ all: $(OBJ) $(BIN) $(OUTPUTFILES)
 $(BIN) $(OBJ) $(INSTALLDIR) :
 	mkdir -p $@
 
-# Note: This implicit .c to .o rule builds it as a shared object. If we support libraries, we probably will have to
-# change this to distinguish between the .c which are the main builtins and others which are modules that will be linked in.
+# make each builtin .so dependent on the library modules
+$(OUTPUTFILES) : $(LIBMODULES)
+
 # this recipe should be the same cmd as in the ".c.o:" target of examples/loadables/Makefile.inc except the output is "$(OBJ)$@" instead of "$@"
 %.o : %.c
-	%compilerCommand%
+	%soCompilerCommand%
 
 # this recipe should be the same cmd as in the "example:" target of examples/loadables/Makefile.inc except the input is "$(OBJ)$<" instead of "example.o"
 $(BIN)%.so : %.o
-	%linkerCommand%
+	%linkerCommand% $(LIBMODULES)
 
 
 clean:
-	-@$(RM) $(OBJ)*.o  $(BIN)*.so
+	-@$(RM) $(OBJ)*.o  $(BIN)*.so lib/*.o
 	rmdir bin 2>/dev/null
 
 install: $(INSTALLDIR) all
@@ -136,16 +147,20 @@ install: $(INSTALLDIR) all
 
 
 # copy and modify the Makefile.inc
-echo "$builtinList" | awk -v makeScript="$makeScript" '
+echo "$builtinList" | awk -v makeScript="$makeScript" -v libraryListStr="$libraryList" '
 	@include "bg_core.awk"
 	BEGIN {
 		printf("# WARNING: This file is overwritten each time you run ./configure so you probably dont want to edit it directly \n");
 		while ((getline builtinSource <"/dev/stdin") >0) {
 			builtinList[builtinSource]=1
 		}
+		split(libraryListStr,tmp)
+		for (i in tmp)
+			libraryList[tmp[i]]=""
+
 		# set these equal to the cmdline from the ".c.o:" and "example:" targets respectively from the /usr/lib/bash/Makefile.inc
 		# if they change
-		compilerCommand="	$(SHOBJ_CC) $(SHOBJ_CFLAGS) $(CCFLAGS) $(INC) -c -o $@ $<";
+		origCompilerCommand="	$(SHOBJ_CC) $(SHOBJ_CFLAGS) $(CCFLAGS) $(INC) -c -o $@ $<";
 		linkerCommand="	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ example.o $(SHOBJ_LIBS)";
 	}
 
@@ -160,9 +175,9 @@ echo "$builtinList" | awk -v makeScript="$makeScript" '
 	# catpure the build command for the building example: from example.o so that we can modify it to be general (an implicit rule)
 	$1==".c.o:" {
 		getline
-		if (compilerCommand != $0)
+		if (origCompilerCommand != $0)
 			printf("WARNING: the compiler %s command under the '%s' target has changed since this configure script was written. You may need to update the '%s' rule in ./configure \n", "build", $1, "%.o : %.c") > "/dev/stdout"
-		compilerCommand=$0
+		origCompilerCommand=$0
 	}
 
 	# its ok if the input Makefile.inc no longer has this target but if it does, we print a warning if it has changed
@@ -175,10 +190,12 @@ echo "$builtinList" | awk -v makeScript="$makeScript" '
 	}
 
 	END {
-		# thes commands come from the original Makefile.inc but we need to fixup the input/output to be generic and in the $(OBJ) folder
-		compilerCommand=gensub(/[$][@]/,   "$(OBJ)$@", "g",compilerCommand);
+		# these commands come from the original Makefile.inc but we need to fixup the input/output to be generic and in the $(OBJ) folder
+		soCompilerCommand=gensub(/[$][@]/,   "$(OBJ)$@", "g",origCompilerCommand);
+		compilerCommand=gensub(/[$][(]SHOBJ_CFLAGS[)]/, "", "g",soCompilerCommand);
 		linkerCommand  =gensub(/example.o/,"$(OBJ)$<", "g",linkerCommand);
 
+		makeScript=gensub(/%soCompilerCommand%/,soCompilerCommand,"g",makeScript);
 		makeScript=gensub(/%compilerCommand%/,compilerCommand,"g",makeScript);
 		makeScript=gensub(/%linkerCommand%/,  linkerCommand,  "g",makeScript);
 
@@ -186,6 +203,16 @@ echo "$builtinList" | awk -v makeScript="$makeScript" '
 		for (builtinName in builtinList)
 			builtinSOList=builtinSOList" $(BIN)"gensub(/[.]c$/,".so","g",builtinName)
 		makeScript=gensub(/%builtinSOList%/,  builtinSOList,  "g",makeScript);
+
+		soModulesList=""
+		for (builtinName in builtinList)
+			soModulesList=soModulesList" $(OBJ)"gensub(/[.]c$/,".o","g",builtinName)
+		makeScript=gensub(/%soModulesList%/,  soModulesList,  "g",makeScript);
+
+		libModulesList=""
+		for (moduleName in libraryList)
+			libModulesList=libModulesList" $(OBJ)"gensub(/[.]c$/,".o","g",moduleName)
+		makeScript=gensub(/%libModulesList%/,  libModulesList,  "g",makeScript);
 
 
 		# if the Makefile.inc no longer has an explicit all: rule, then we can use it as a an include file.
