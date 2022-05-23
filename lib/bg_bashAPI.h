@@ -3,15 +3,15 @@
 #define _bg_bashAPI_H_
 
 #ifdef HAVE_CONFIG_H
-#include "config.h"
+#include <config.h>
 #endif
 
 #include <stdarg.h>
 
 // this replaces loadables.h
 #include <builtins.h>
-#include "shell.h"
-#include "common.h"
+#include <shell.h>
+#include <common.h>
 
 // everyone likes misc stuff
 #include "bg_misc.h"
