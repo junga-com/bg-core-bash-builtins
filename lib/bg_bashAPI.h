@@ -2,8 +2,40 @@
 #if !defined (_bg_bashAPI_H_)
 #define _bg_bashAPI_H_
 
-#include "../loadables.h"
-#include "variables.h"
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
+#include <stdarg.h>
+
+// this replaces loadables.h
+#include <builtins.h>
+#include "shell.h"
+#include "common.h"
+
+// everyone likes misc stuff
+#include "bg_misc.h"
+#include "bg_debug.h"
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// NOTES:
+//    * builtins.h : defines the data structures and functions to create a loadable plugin
+//                   but also brings in sys/types.h or unistd.h based on _MINIX
+//    * common.h  has interesing functions parse_and_execute, pushd.def,setattr.def,shopt,set functions, find_shell_builtin, JOB_CONTROL
+//                set_dollar_vars_changed, builtin_error and other error reporting
+//    * shell.h   mostly brings in a lot of other headers.
+//                parser_remaining_input() seems interesting WRT assertError unwinding the stack
+//                shell state variables
+//    *    general.h : savestring, strchr, strrchr, xmalloc. whitespace,
+//    *    subst.h   : manipulate strings of code and word lists.
+//    *    externs.h : print_word_list, print_command, make_command_string, set -x support, maybe_make_restricted, get_current_user_info,
+//                     parser stuff, locale stuff, generic list functions, string manipulation find_string_in_alist strip_leading etc,
+//                     sh_modcase,get_clk_tck,getcwd,inttostr family, sh_makepath, netopen, gethostname, sh_canonpath, sh_regmatch,
+//                     string quoting family (sh_single_quote),strncasecmp,strftime,STRINGLIST *strlist_create, sh_mktmpname,
+//                     get_new_window_size, zgetline family (read from stdin), match_pattern_char
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
 

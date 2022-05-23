@@ -1,10 +1,9 @@
 
-#include <stdarg.h>
-#include <errno.h>
 #include "bg_debug.h"
-#include "builtins.h"
 
-
+#include <stdarg.h>
+#include <stdc.h>
+#include <errno.h>
 
 FILE* _bgtraceFD=NULL;
 int bgtraceIndentLevel=0;

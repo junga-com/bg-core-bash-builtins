@@ -1,20 +1,10 @@
 
 #include "bg_misc.h"
 
-#include <config.h>
-
-#if defined (HAVE_UNISTD_H)
-#  include <unistd.h>
-#endif
-#include "bashansi.h"
-#include <stdio.h>
 #include <errno.h>
 #include <regex.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include "../loadables.h"
-#include "variables.h"
+
+#include "bg_bashAPI.h"
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

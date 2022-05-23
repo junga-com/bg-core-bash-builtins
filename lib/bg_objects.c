@@ -1,21 +1,9 @@
 
 #include "bg_objects.h"
 
-#include <config.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <stdlib.h>
 #include <regex.h>
+#include <execute_cmd.h>
 
-#include "../loadables.h"
-#include <stdarg.h>
-#include "builtins.h"
-#include "execute_cmd.h"
-
-#include "bg_misc.h"
-#include "bg_debug.h"
-#include "bg_bashAPI.h"
 #include "BGString.h"
 
 char* MemberTypeToString(MemberType mt, char* errorMsg, char* _rsvMemberValue)

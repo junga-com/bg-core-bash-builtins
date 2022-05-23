@@ -2,6 +2,7 @@
 #if !defined (_bg_debug_H_)
 #define _bg_debug_H_
 
+#include <config.h>
 #include <stdio.h>
 
 // to embed a breakpoint for debugging

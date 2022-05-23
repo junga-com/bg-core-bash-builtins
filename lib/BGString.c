@@ -1,14 +1,7 @@
 
 #include "BGString.h"
 
-#include <config.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <stdlib.h>
-
-// we should be able to get rid of this include if we try
-#include "../loadables.h"
+#include "bg_bashAPI.h"
 
 void BGString_init(BGString* pStr, int allocatedLen)
 {

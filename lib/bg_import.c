@@ -1,12 +1,6 @@
 
 #include "bg_import.h"
 
-#include <stdlib.h>
-#include <string.h>
-
-#include "../loadables.h"
-
-#include "bg_misc.h"
 #include "bg_bashAPI.h"
 
 int importManifestCriteria(ManifestRecord* rec, ManifestRecord* target)

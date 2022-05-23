@@ -2,9 +2,6 @@
 #if !defined (_bg_json_H_)
 #define _bg_json_H_
 
-#include <stdlib.h>
-#include <stdio.h>
-
 #include "bg_objects.h"
 
 typedef enum {

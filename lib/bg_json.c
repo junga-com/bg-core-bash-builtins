@@ -1,18 +1,8 @@
 
 #include "bg_json.h"
 
-#include <stdlib.h>
-
-#include "../loadables.h"
-
-#include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
-#include <stdarg.h>
-
-#include "bg_misc.h"
-#include "bg_debug.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // JSON String escaping

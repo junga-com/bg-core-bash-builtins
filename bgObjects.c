@@ -2,19 +2,9 @@
 
 /* See Makefile for compilation details. */
 
-
-#include <config.h>
-
-
-#include "loadables.h"
-#include "variables.h"
-#include <stdarg.h>
-#include <execute_cmd.h>
-#include "bg_misc.h"
-#include "bg_debug.h"
-#include "bg_bashAPI.h"
-#include "BGString.h"
 #include "bg_objects.h"
+
+#include "bg_bashAPI.h"
 #include "bg_json.h"
 #include "bg_manifest.h"
 #include "bg_import.h"

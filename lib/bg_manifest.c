@@ -3,12 +3,9 @@
 
 #include <stdio.h>
 
-#include "../loadables.h"
-
-
-#include "BGString.h"
 #include "bg_bashAPI.h"
-#include "bg_misc.h"
+#include "BGString.h"
+
 
 
 ManifestRecord* ManifestRecord_assign(ManifestRecord* ret, char* pkgName, char* assetType, char* assetName, char* assetPath)
