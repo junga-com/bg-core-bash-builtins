@@ -99,6 +99,8 @@ extern BUCKET_CONTENTS* ObjMemberItr_next(ObjMemberItr* pI);
 extern BUCKET_CONTENTS* ObjMemberItr_init(ObjMemberItr* pI, BashObj* pObj, ObjVarType type);
 extern int _classUpdateVMT(char* className, int forceFlag);
 extern int _bgclassCall(WORD_LIST* list);
+#define BashObj_isNull(pObj) (!pObj || strcmp(ShellVar_get(pObj->vThis),"assertThisRefError")==0)
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // BGObjectStack

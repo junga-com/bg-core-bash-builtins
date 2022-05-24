@@ -5,6 +5,7 @@
 #include <execute_cmd.h>
 
 #include "BGString.h"
+#include "bg_import.h"
 
 char* MemberTypeToString(MemberType mt, char* errorMsg, char* _rsvMemberValue)
 {
@@ -121,38 +122,37 @@ int BashObjRef_init(BashObjRef* pRef, char* objRefStr)
 
 SHELL_VAR* assertClassExists(char* className, int* pErr)
 {
+    bgtracePush(); bgtrace1(0,"STR assertClassExists '%s'\n",className);
     if (!className) {
         if (pErr) *pErr=1;
         setErrorMsg("className is empty\n");
+        bgtracePop(); bgtrace1(0,"END assertClassExists '%s'\n",className);
         return NULL;
     }
+
     SHELL_VAR* vClass = ShellVar_find(className);
+
     if (!vClass) {
-        // sh_builtin_func_t* sourceBltn = find_shell_builtin("source");
-        // int result = execute_builtin (sourceBltn, , flags, 0);
-        SHELL_VAR* vImportFn = ShellVar_find("import");
-        if (!vImportFn) {
-            setErrorMsg("could not find shell function import");
+        char* classLibName = save2string(className, ".sh");
+        int ret = importBashLibrary(classLibName, 0, NULL);
+        xfree(classLibName);
+
+        vClass = ShellVar_find(className);
+        if (!vClass) {
+            if (pErr) *pErr=1;
+            setErrorMsg("Class still does not exist after importing library\n\tclassName='%s'\n", className);
+            bgtracePop(); bgtrace1(0,"END assertClassExists '%s'\n",className);
             return NULL;
         }
-        WORD_LIST* args = NULL;
-        char* classLibName = save2string(className, ".sh");
-        args = make_word_list(make_word(classLibName), args);
-        xfree(classLibName);
-        execute_shell_function(vImportFn, args);
-        dispose_words(args);
-
-
-        if (pErr) *pErr=1;
-        setErrorMsg("Class does not exist\n\tclassName='%s'\n", className);
-        return NULL;
     }
     if (!assoc_p(vClass) && !array_p(vClass)) {
         if (pErr) *pErr=1;
         setErrorMsg("Error - <refClass> (%s) is not an array\n", className);
+        bgtracePop(); bgtrace1(0,"END assertClassExists '%s'\n",className);
         return NULL;
     }
     if (pErr) *pErr=0;
+    bgtracePop(); bgtrace1(0,"END assertClassExists '%s'\n",className);
     return vClass;
 }
 
@@ -165,7 +165,7 @@ void BashObj_makeRef(BashObj* pObj)
     // '_bgclassCall <oid> <class> 0 | '
     //  12  + 8 + 1 + strlen(<oid>) + strlen(<class>)
     strcpy(pObj->ref,"_bgclassCall ");
-    strcat(pObj->ref,pObj->name);
+    strcat(pObj->ref,pObj->vThis->name);
     strcat(pObj->ref," ");
     strcat(pObj->ref,pObj->vCLASS->name);
     strcat(pObj->ref," 0 | ");
@@ -363,9 +363,11 @@ BashObj* ConstructObject(WORD_LIST* args)
         bgtrace1(1,"dyn ctor exists ...'%s'\n",tstr);
         char* objVar = args->word->word;
         WordList_unshift(args, (dynData)?dynData:"");
+        WordList_unshift(args, tstr);
         // if the class ctor returns true, we are done, otherwise it wants us to continue constructing the object
         if (execute_shell_function(fDynCtor, args) == 0) {
             xfree(dynData);
+            xfree(tstr);
             bgtracePop();
             bgtrace0(1,"END 2 ConstructObject \n");
             return BashObj_find(objVar, NULL,NULL);
@@ -386,7 +388,8 @@ BashObj* ConstructObject(WORD_LIST* args)
         return NULL;
     }
     char* _objRefVar = args->word->word;
-    args = args->next;
+    // dont remove this arg because we need a burner arg when calling execute_shell_function
+    //args = args->next;
 
     SHELL_VAR* vObjVar = ShellVar_find(_objRefVar);
 
@@ -444,12 +447,15 @@ BashObj* ConstructObject(WORD_LIST* args)
         xfree(tstr);
         BashObj_makeRef(newObj);
 
-    // its a plain string variable
+    // its a plain string variable or an array reference or does not exist
     } else {
         newObj->vThis = varNewHeapVar((oidAttributes)?oidAttributes:"A");
-        strcpy(newObj->name, newObj->vThis->name);
         BashObj_makeRef(newObj);
-        if (vObjVar)
+
+        // if _objRefVar is an array reference (v[idx]) vObjVar will not be found but we can still set it like a normal var
+        if (valid_array_reference(_objRefVar,VA_NOEXPAND))
+            ShellVar_setS(_objRefVar, newObj->ref);
+        else if (vObjVar)
             ShellVar_set(vObjVar, newObj->ref);
         else
             ShellVar_createSet(_objRefVar, newObj->ref);
@@ -490,7 +496,7 @@ BashObj* ConstructObject(WORD_LIST* args)
             ShellVar_refCreateSet("prototype", vProto->name);
             ShellVar_assocCopyElements(assoc_cell(newObj->vThis), assoc_cell(vProto));
         }
-        SHELL_VAR* vCtor = ShellVar_findWithSuffix(_cname->word->word, "::__construct");
+        SHELL_VAR* vCtor = ShellFunc_findWithSuffix(_cname->word->word, "::__construct");
         if (vCtor)
             execute_shell_function(vCtor, args);
     }
@@ -573,7 +579,7 @@ void BashObj_setClass(BashObj* pObj, char* newClassName)
     assoc_insert (assoc_cell(pObj->vThisSys), savestring("_Ref"), pObj->ref);
     assoc_insert (assoc_cell(pObj->vThisSys), savestring("0"), pObj->ref);
     char* defIdxSetting = ShellVar_assocGet(pObj->vCLASS, "defaultIndex");
-    if (defIdxSetting && strcmp(defIdxSetting,"on")==0)
+    if (!defIdxSetting || strcmp(defIdxSetting,"off")!=0)
         ShellVar_assocSet(pObj->vThis, "0", pObj->ref);
     else
         assoc_remove( assoc_cell(pObj->vThis), "0" );
@@ -734,8 +740,10 @@ void DeclareClassEnd(char* className)
     }
 
     // ensure that our base class is realized because we will need it
-    if (baseClass)
+    if (baseClass) {
+        assertClassExists(baseClass, NULL);
         DeclareClassEnd(baseClass);
+    }
 
     // ConstructObject Class "$className" "$className" "$baseClass" "${initData[@]}"
     ConstructObject(constructionArgs);
@@ -744,7 +752,7 @@ void DeclareClassEnd(char* className)
     SHELL_VAR* vClassDynCtor = ShellVar_findWithSuffix(tstr, "::__construct");
     xfree(tstr);
     if (vClassDynCtor) {
-        execute_shell_function(vClassDynCtor, constructionArgs->next->next);
+        execute_shell_function(vClassDynCtor, constructionArgs->next);
     }
     dispose_words(constructionArgs);
 }

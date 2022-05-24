@@ -37,6 +37,8 @@
 //                     get_new_window_size, zgetline family (read from stdin), match_pattern_char
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// make this function from source.def avaialable
+extern int source_builtin (WORD_LIST *);
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -50,8 +52,12 @@
 //    <function>Global : ignore local vars by this name and operate only on global vars
 //    <function>createSet : this is short for create and set as opposed to creating an uninitialized var
 
+#define ShellFunc_find(funcname)                 find_function(funcname)
+extern SHELL_VAR* ShellFunc_findWithSuffix(char* funcname, char* suffix);
+
 #define ShellVar_find(varname)                  find_variable(varname)
 #define ShellVar_findGlobal(varname)            find_global_variable(varname)
+extern SHELL_VAR* ShellVar_findWithSuffix(char* varname, char* suffix);
 #define ShellVar_create(varname)                make_local_variable(varname,0)
 #define ShellVar_createGlobal(varname)          bind_global_variable(varname, NULL, ASS_FORCE)
 #define ShellVar_createGlobalSet(varname,value) bind_global_variable(varname, value, ASS_FORCE)
@@ -61,6 +67,7 @@ extern SHELL_VAR* ShellVar_findOrCreate(char* varname);
 #define ShellVar_unsetS(varname)                unbind_variable(varname)
 #define ShellVar_get(var)                       get_variable_value(var)
 #define ShellVar_set(var,value)                 bind_variable_value(var,value,0)
+extern void ShellVar_setS(char* varname, char* value);
 
 // note that ShellVar_find will return the non-ref SHELL_VAR refered to by varname. ShellVar_refFind allows us to manipulate the ref
 #define ShellVar_refFind(varname)              find_variable_noref(varname)
@@ -94,7 +101,6 @@ extern WORD_LIST* ShellVar_arrayToWordList(SHELL_VAR* var);
 #define ShellVar_assocSet(var,indexStr,value)  assoc_insert(assoc_cell(var), savestring(indexStr), value)
 #define ShellVar_assocSize(var)                assoc_num_elements(assoc_cell(var))
 
-extern SHELL_VAR* ShellVar_findWithSuffix(char* varname, char* suffix);
 extern void ShellVar_assocCopyElements(HASH_TABLE* dest, HASH_TABLE* source);
 
 
@@ -120,8 +126,8 @@ typedef struct {
     int position;
 } AssocItr;
 
-extern BUCKET_CONTENTS* AssocItr_next(AssocItr* pI);
 extern BUCKET_CONTENTS* AssocItr_init(AssocItr* pI, SHELL_VAR* vVar);
+extern BUCKET_CONTENTS* AssocItr_next(AssocItr* pI);
 
 
 #endif // _bg_bashAPI_H_

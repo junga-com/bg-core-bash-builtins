@@ -122,19 +122,19 @@ ManifestRecord manifestGet(char* manFile, char* outputStr, ManifestRecord* targe
         BGString_copy(&parser, buf);
         BGString_replaceWhitespaceWithNulls(&parser);
         rec.pkgName = BGString_nextWord(&parser);
-        if (!matchFilter(target->pkgName ,rec.pkgName))
+        if (!filterFn && !matchFilter(target->pkgName ,rec.pkgName))
             continue;
 
         rec.assetType = BGString_nextWord(&parser);
-        if (!matchFilter(target->assetType ,rec.assetType))
+        if (!filterFn && !matchFilter(target->assetType ,rec.assetType))
             continue;
 
         rec.assetName = BGString_nextWord(&parser);
-        if (!matchFilter(target->assetName ,rec.assetName))
+        if (!filterFn && !matchFilter(target->assetName ,rec.assetName))
             continue;
 
         rec.assetPath = BGString_nextWord(&parser);
-        if (!matchFilter(target->assetPath ,rec.assetPath))
+        if (!filterFn && !matchFilter(target->assetPath ,rec.assetPath))
             continue;
 
         if (filterFn && (!(*filterFn)(&rec, target)) ) {

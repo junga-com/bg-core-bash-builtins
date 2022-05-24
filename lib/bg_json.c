@@ -184,6 +184,7 @@ JSONToken* JSONToken_makeError(JSONScanner* scanner, JSONToken* token, char* fmt
         snprintf(temp, 500, "(error token:'%s'(%s)) ", JSONTypeToString(token->type), token->value);
         strncat(this->value, temp, bytesLeft);
         bytesLeft-=strlen(temp);
+        JSONToken_free(token);
     }
 
     va_list args;
@@ -351,7 +352,6 @@ JSONToken* JSONScanner_getToken(JSONScanner* this)
     }
     return NULL;
 }
-//JSONToken_print(_bgtraceFD, token, "");
 
 
 JSONToken* JSONScanner_getObject(JSONScanner* this, BashObj* pObj)
@@ -364,22 +364,24 @@ JSONToken* JSONScanner_getObject(JSONScanner* this, BashObj* pObj)
             JSONToken_free(token);
             token = JSONScanner_getToken(this);
         }
-        if (token->type != jt_string) {
+
+        // token should now be the name of an attribute.
+        if (token->type != jt_string)
             return JSONToken_makeError(this, token, "Expected a string");
-        }
         JSONToken* name = token;
 
+        // the : separator
         token = JSONScanner_getToken(this);
-        if (token->type != jt_colon) {
+        if (token->type != jt_colon)
             return JSONToken_makeError(this, token, "Expected a colon");
-        }
         JSONToken_free(token);
 
+        // the value of the attribute
         JSONToken* value = JSONScanner_getValue(this);
-        if (!JSONType_isAValue(value->type)) {
+        if (!JSONType_isAValue(value->type))
             return JSONToken_makeError(this,value, "Unexpected token");
-        }
 
+        // check for some special bash object system variables for special processing
         if (strcmp(name->value,"_OID")==0) {
             // // TODO: use _OID to update the objDictionary so that we can fixup relative objRefs
             // char* sessionOID = value;

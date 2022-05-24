@@ -9,6 +9,17 @@ SHELL_VAR* ShellVar_findOrCreate(char* varname)
     return var;
 }
 
+void ShellVar_setS(char* varname, char* value)
+{
+    if (valid_array_reference(varname,VA_NOEXPAND))
+        assign_array_element(varname,value,0);
+    else {
+        SHELL_VAR* var = ShellVar_findOrCreate(varname);
+        bind_variable_value(var,value,0);
+    }
+}
+
+
 SHELL_VAR* ShellVar_refCreate(char* varname)
 {
     SHELL_VAR* var = make_local_variable(varname,0);
@@ -28,10 +39,24 @@ SHELL_VAR* ShellVar_refCreateSet(char* varname, char* value)
 WORD_LIST* ShellVar_arrayToWordList(SHELL_VAR* var)
 {
     WORD_LIST* ret=NULL;
-    for (ARRAY_ELEMENT* el = (array_cell(var))->lastref->prev; el!=(array_cell(var))->head; el=el->prev ) {
-        ret = make_word_list(make_word(el->value), ret);
+    if (array_p(var)) {
+        for (ARRAY_ELEMENT* el = (array_cell(var))->head->prev; el!=(array_cell(var))->head; el=el->prev ) {
+            ret = make_word_list(make_word(el->value), ret);
+        }
+    } else if (assoc_p(var)) {
+
+    } else {
+        ret = make_word_list(make_word(ShellVar_get(var)), ret);
     }
     return ret;
+}
+
+SHELL_VAR* ShellFunc_findWithSuffix(char* funcname, char* suffix)
+{
+    char* buf = save2string(funcname, suffix);
+    SHELL_VAR* vVar = find_function(buf);
+    xfree(buf);
+    return vVar;
 }
 
 
@@ -90,6 +115,16 @@ char* WordList_shift(WORD_LIST* list)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // AssocItr
 
+BUCKET_CONTENTS* AssocItr_init(AssocItr* pI, SHELL_VAR* vVar)
+{
+    pI->vVar=vVar;
+    pI->table = assoc_cell(pI->vVar);
+    pI->position=0;
+    pI->item=NULL;
+    pI->item = AssocItr_next(pI);
+    return pI->item;
+}
+
 BUCKET_CONTENTS* AssocItr_next(AssocItr* pI)
 {
     // first iterate the current bucket linked list if we are not at the end
@@ -103,14 +138,5 @@ BUCKET_CONTENTS* AssocItr_next(AssocItr* pI)
     } else {
         pI->item = NULL;
     }
-    return pI->item;
-}
-BUCKET_CONTENTS* AssocItr_init(AssocItr* pI, SHELL_VAR* vVar)
-{
-    pI->vVar=vVar;
-    pI->table = assoc_cell(pI->vVar);
-    pI->position=0;
-    pI->item=NULL;
-    pI->item = AssocItr_next(pI);
     return pI->item;
 }

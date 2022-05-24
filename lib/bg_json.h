@@ -37,7 +37,6 @@ typedef struct {
     char* filename;
 } JSONScanner;
 
-extern JSONToken* JSONScanner_getValue(JSONScanner* this);
 
 extern char* jsonEscape(char* s);
 extern void jsonUnescape(char* s);
@@ -53,7 +52,7 @@ extern char* JSONTypeToString(JSONType jt);
 // JSONToken
 
 #define JSONToken_isDone(this) ((this->type == jt_eof) || (this->type == jt_error))
-#define JSONToken_free(t) do { if (t) { xfree(t->value); xfree(t); }; } while(0)
+#define JSONToken_free(t) do { if (t) { xfree(t->value); xfree(t); t=NULL; }; } while(0)
 
 extern void JSONToken_print(FILE* fd, JSONToken* this, char* label);
 extern char* JSONToken_ToString(JSONToken* this);

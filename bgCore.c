@@ -4,6 +4,8 @@
 
 #include "bg_objects.h"
 
+#include <execute_cmd.h>
+
 #include "bg_bashAPI.h"
 #include "bg_json.h"
 #include "bg_manifest.h"
@@ -27,10 +29,10 @@ int ConstructObjectFromJson(WORD_LIST* list)
     char* objVar = list->word->word;
     list = list->next;
     SHELL_VAR* vObjVar = ShellVar_find(objVar);
-    if (!vObjVar) {
+    if (!vObjVar  && !valid_array_reference(objVar,VA_NOEXPAND))
         ShellVar_refCreate(objVar);
-    }
-    VUNSETATTR(vObjVar, att_invisible);
+    if (vObjVar)
+        VUNSETATTR(vObjVar, att_invisible);
 
     char* jsonFile = list->word->word;
     list = list->next;
@@ -42,13 +44,17 @@ int ConstructObjectFromJson(WORD_LIST* list)
     JSONToken* jValue = JSONScanner_getValue(scanner);
     if (jValue->type == jt_error) {
         fprintf(stderr, "%s\n", jValue->value);
+        JSONToken_free(jValue);
         return EXECUTION_FAILURE;
 
     } else if (!JSONType_isAValue(jValue->type)) {
         fprintf(stderr, "error: Expected a JSON value but got token='%s(%s)', \n", JSONTypeToString(jValue->type), jValue->value);
+        JSONToken_free(jValue);
         return EXECUTION_FAILURE;
 
     // we found an object
+    } else if (JSONType_isBashObj(jValue->type) && !vObjVar) { // objVar is an array ref like v[sub]
+        ShellVar_setS(objVar, ((BashObj*)jValue->value)->ref);
     } else if (JSONType_isBashObj(jValue->type) && nameref_p(vObjVar)) {
         ShellVar_set(vObjVar, ((BashObj*)jValue->value)->name);
     } else if (JSONType_isBashObj(jValue->type) && (array_p(vObjVar)) ) {
@@ -59,6 +65,8 @@ int ConstructObjectFromJson(WORD_LIST* list)
         ShellVar_set(vObjVar, ((BashObj*)jValue->value)->ref);
 
     // we found a primitive
+    } else if (!vObjVar) { // objVar is an array ref like v[sub]
+        ShellVar_setS(objVar, jValue->value);
     } else if (nameref_p(vObjVar)) {
         // the user provided a nameref for objVar but the json data value is not an object or array so we create a heap_ var for
         // the simple value which the nameref can point to
@@ -73,6 +81,7 @@ int ConstructObjectFromJson(WORD_LIST* list)
     }
 
 //    discard_unwind_frame ("bgCore");
+    JSONToken_free(jValue);
     return EXECUTION_SUCCESS;
 }
 
@@ -85,8 +94,11 @@ int Object_fromJSON(WORD_LIST* args)
         scanner = JSONScanner_newFromStream(1);
 
     BashObj* pObj = BashObj_find("this", NULL,NULL);
-    //JSONToken* endToken = JSONScanner_getObject(scanner, pObj);
-    JSONScanner_getObject(scanner, pObj);
+    if (BashObj_isNull(pObj))
+        return setErrorMsg("Object::fromJSON() called on an invalid object. 'this' does not exist or is the null reference");
+
+    JSONToken* endToken = JSONScanner_getObject(scanner, pObj);
+    JSONToken_free(endToken);
     return EXECUTION_SUCCESS;
 }
 
@@ -215,6 +227,40 @@ int bgCore_builtin(WORD_LIST* list)
     // bgCore ConstructObjectFromJson
     if (strcmp(list->word->word, "ConstructObjectFromJson")==0) {
         int ret = ConstructObjectFromJson(list->next);
+        bgtracePop();
+        bgtrace0(1,"### ENDING 4 bgCore_builtin()\n");
+        return ret;
+    }
+
+    // bgCore import <scriptName>
+    if (strcmp(list->word->word, "import")==0) {
+        list = list->next;
+        char* param = (list) ? list->word->word : NULL;
+        int importFlags = 0;
+        char* retVar = NULL;
+        while (param && *param == '-') {
+            param = (*(param+1)=='-') ? param+2 : param+1;
+            switch (*param) {
+              case 'd': importFlags |= im_devOnlyFlag    ; break;
+              case 'f': importFlags |= im_forceFlag      ; break;
+              case 'e': importFlags |= im_stopOnErrorFlag; break;
+              case 'q': importFlags |= im_quietFlag      ; break;
+              case 'g': importFlags |= im_getPathFlag;
+                        retVar = bgOptionGetOpt(&list);
+                        break;
+            }
+            list = list->next;
+            param = (list) ? list->word->word : NULL;
+        }
+        if (!list)
+            return setErrorMsg("<scriptname> is a required argument to import\n");
+
+        char* scriptPath = NULL;
+        int ret = importBashLibrary(list->word->word, importFlags, &scriptPath);
+        if (importFlags&im_getPathFlag)
+            ShellVar_setS(retVar, scriptPath);
+        if (scriptPath) xfree(scriptPath);
+
         bgtracePop();
         bgtrace0(1,"### ENDING 4 bgCore_builtin()\n");
         return ret;
