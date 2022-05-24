@@ -36,7 +36,7 @@ function getDeps(seendeps, basename           ,dep) {
 	}
 }
 
-# $(BIN)bgObjects.so : $(OBJ)bgObjects.o $(LIBMODULES)
+# $(BIN)bgCore.so : $(OBJ)bgCore.o $(LIBMODULES)
 # 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ $< $(LIBMODULES)
 function writeSOBuildRule(basename) {
 	printf("%s : %s $(LIBMODULES)\n\t$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ $< $(LIBMODULES)\n",
@@ -44,7 +44,7 @@ function writeSOBuildRule(basename) {
 		nodes[file]["objName"]);
 }
 
-# $(OBJ)bgObjects.o : bgObjects.c
+# $(OBJ)bgCore.o : bgCore.c
 # 	$(SHOBJ_CC) $(SHOBJ_CFLAGS) $(CCFLAGS) $(INC) -c -o $@ $<
 function writeDepRule(basename                ,seendeps) {
 	arrayCreate(seendeps);

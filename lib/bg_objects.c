@@ -65,7 +65,7 @@ int setErrorMsg(char* fmt, ...)
     xfree(outputMsg);
 
     //builtin_error(fmt, p1, p2, p3, p4, p5);
-//    run_unwind_frame ("bgObjects");
+//    run_unwind_frame ("bgCore");
     return (EXECUTION_FAILURE);
 }
 
@@ -904,7 +904,7 @@ int _classUpdateVMT(char* className, int forceFlag)
 int _bgclassCall(WORD_LIST* list)
 {
     bgtrace1(1,"starting _bgclassCall\n", WordList_toString(list));
-//    begin_unwind_frame ("bgObjects");
+//    begin_unwind_frame ("bgCore");
 
     if (!list || list_length(list) < 3) {
         printf ("Error - not enough arguments (%d). See usage..\n\n", (list)?list_length(list):0);
@@ -1275,7 +1275,7 @@ int _bgclassCall(WORD_LIST* list)
     xfree(_rsvMemberName);_rsvMemberName=NULL;
     xfree(_memberExpression);_memberExpression=NULL;
     xfree(_memberOp); _memberOp=NULL;
-//    discard_unwind_frame ("bgObjects");
+//    discard_unwind_frame ("bgCore");
 
     return (EXECUTION_SUCCESS);
 }

@@ -9,12 +9,12 @@ Animal::speak() {
 
 function foo()
 {
-	#enable -f bgObjects.so bgObjects 2>/dev/null
+	#enable -f bgCore.so bgCore 2>/dev/null
 
-	builtin bgObjects ConstructObject Animal animal
+	builtin bgCore ConstructObject Animal animal
 	echo "result=$?"
 	$animal.speak
 
-	builtin bgObjects manifestGet "$@"
+	builtin bgCore manifestGet "$@"
 }
 foo "$@"

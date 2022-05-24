@@ -9,7 +9,7 @@ eliminates most of that overhead. There will still be about 1/2 a ms (0.0005sec)
 for any low level script features that may be called many times in a script.
 
 The bg_object.sh library  will automatically enable and use this builtin if it is installed (or bg-dev virtually installed) on the
-host.  It will attempt to "enable -f bgObjects.so bgObjects" but will fallback to the bash script implementation if the builtin is
+host.  It will attempt to "enable -f bgCore.so bgCore" but will fallback to the bash script implementation if the builtin is
 not found in any of the paths in BASH_LOADABLES_PATH. The path /usr/lib/bash will be searched if BASH_LOADABLES_PATH is not set.
 
 ### EXAMPLE OO SCRIPT:

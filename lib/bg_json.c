@@ -174,7 +174,7 @@ JSONToken* JSONToken_makeError(JSONScanner* scanner, JSONToken* token, char* fmt
                 charPos=1;
             }
         }
-        snprintf(this->value, bytesLeft, "error: bgObjects fromJSON: %s(%d:%d) ", scanner->filename, linePos,charPos);
+        snprintf(this->value, bytesLeft, "error: bgCore fromJSON: %s(%d:%d) ", scanner->filename, linePos,charPos);
         bytesLeft-=strlen(this->value);
     }
 

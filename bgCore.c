@@ -1,4 +1,4 @@
-/* bgObjects - loadable builtin to optimize bg_objects.sh  */
+/* bgCore - loadable builtin to optimize bg_objects.sh  */
 
 /* See Makefile for compilation details. */
 
@@ -10,120 +10,14 @@
 #include "bg_import.h"
 
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// CMD: restoreObject
-
-// OBSOLETE? I think that Object_fromJSON() replaced this
-// restoreObject <objVar>
-// reads attribute stream from stdin to restore the state of <objVar>
-int restoreObject(WORD_LIST* list)
-{
-//    begin_unwind_frame ("bgObjects");
-
-    if (!list || !list->word) {
-        setErrorMsg("Error - <objVar> is a required argument to restoreObject. See usage..\n\n");
-        builtin_usage();
-        return (EX_USAGE);
-    }
-
-    BashObj* scope = BashObj_find(list->word->word, NULL,NULL);
-    if (!scope) {
-        return setErrorMsg("Error - <objVar> (%s) does not exist\n\n", list->word->word);
-    }
-
-    //SHELL_VAR* vCurrentStack=ShellVar_find("currentStack");
-    BGObjectStack* currentStack=NULL;
-
-    currentStack = BGObjectStack_unshift(currentStack, scope);
-
-    char* ifs_chars = getifs();
-    char *line=NULL, *startToken=NULL, *sepStart=NULL;
-    size_t lineAllocSize=0;
-    while (zgetline(0, &line, &lineAllocSize, '\n', 0)>0) {
-        bgtrace0(2,"        01234567890123456789012345678901234567890\n");
-        bgtrace1(2,"line = '%s'\n", line);
-        startToken=line;
-        // TODO: protect the lines below from running out of input
-        char *valType=NULL, *relName=NULL, *jpath=NULL, *value=NULL;
-        if (*startToken) valType = get_word_from_string(&startToken, ifs_chars, &sepStart);
-        if (*startToken) relName = get_word_from_string(&startToken, ifs_chars, &sepStart);
-        if (*startToken) jpath   = get_word_from_string(&startToken, ifs_chars, &sepStart);
-        if (*startToken) value   = get_word_from_string(&startToken, ifs_chars, &sepStart);
-
-        // Note that relName=="<arrayEl>" when current is an Array (aka json 'list'). BashObj_setMemberValue handles that because
-        // when array_p(vThis) but !isNumber(relName), it will append to the end of the array
-
-        //[ "$valType" == "!ERROR" ] && assertError -v objRefVar -v file "jsonAwk returned an error reading restoration file"
-        if (strcmp(valType,"!ERROR")==0) {
-            return setErrorMsg("error: Object::fromJSON: awk script ended with non-zero exit code\n");
-        }
-
-        // value="${value//%20/ }"
-        for (char* c=value; c && *c;) {
-            if (strncmp(c,"%20",3)==0) {
-                *c++=' ';
-                memmove(c,c+2, strlen(c+2)+1);
-            } else
-                c++;
-        }
-
-        jsonUnescape(value);
-
-        char* className=NULL;
-        if (strcmp(valType,"startObject")==0) {
-            className="Object";
-        } else if (strcmp(valType,"startList")==0) {
-            className="Array";
-        }
-        if (className) {
-            // ConstructObject "$className" currentStack[0]
-            BashObj* subObj = BashObj_makeNewObject(className, NULL);
-            BashObj_setMemberValue(currentStack->pObj, relName, subObj->ref);
-            currentStack = BGObjectStack_unshift(currentStack, subObj);
-
-        } else if (strcmp(valType,"endObject")==0 || strcmp(valType,"endList")==0) {
-            BashObj* temp = BGObjectStack_shift(&currentStack);
-            xfree(temp);
-
-        } else if (strcmp(valType,"tObject")==0 || strcmp(valType,"tArray")==0) {
-            // there is nothing we need to do for these values type because the start* and end* types encompasses them
-
-        } else if (strcmp(relName,"_OID")==0) {
-            // // use _OID to update the objDictionary so that we can fixup relative objRefs
-            // char* sessionOID = value;
-            // objDictionary[sessionOID]=currentStack->pObj->name;
-            // objDictionary[currentStack->pObj->name]=sessionOID;
-
-        } else if (strcmp(relName,"_Ref")==0 || strcmp(relName,"0")==0) {
-            // ignore _Ref and "0" on restore
-
-        } else if (strcmp(relName,"_CLASS")==0) {
-            BashObj_setClass(currentStack->pObj, value);
-
-        } else {
-            // *)	if [[ "$value" =~ _bgclassCall.*sessionOID_[0-9]+ ]]; then
-            //         :
-            //     fi
-            BashObj_setMemberValue(currentStack->pObj,relName, value);
-        }
-
-        xfree(valType);
-        xfree(relName);
-        xfree(jpath);
-        xfree(value);
-    }
-    xfree(line);
-//    discard_unwind_frame ("bgObjects");
-    return EXECUTION_SUCCESS;
-}
 
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// bgObjects ConstructObjectFromJson <objVar>
+// bgCore ConstructObjectFromJson <objVar>
 int ConstructObjectFromJson(WORD_LIST* list)
 {
-//    begin_unwind_frame("bgObjects");
+//    begin_unwind_frame("bgCore");
 
     if (!list || list_length(list) < 2) {
         setErrorMsg("Error - <objVar> and <restoreFile> are required arguments to ConstructObjectFromJson. See usage..\n\n");
@@ -178,7 +72,7 @@ int ConstructObjectFromJson(WORD_LIST* list)
         ShellVar_set(vObjVar, jValue->value);
     }
 
-//    discard_unwind_frame ("bgObjects");
+//    discard_unwind_frame ("bgCore");
     return EXECUTION_SUCCESS;
 }
 
@@ -221,21 +115,21 @@ char* bgOptionGetOpt(WORD_LIST** args)
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// bgObjects <cmd> ....
+// bgCore <cmd> ....
 // This is the entry point builtin function. It dispatches the call to the specific function based on the first command word
-int bgObjects_builtin(WORD_LIST* list)
+int bgCore_builtin(WORD_LIST* list)
 {
-    bgtrace1(1,"### STRing bgObjects_builtin(%s)\n", WordList_toString(list));
+    bgtrace1(1,"### STRing bgCore_builtin(%s)\n", WordList_toString(list));
     bgtracePush();
     if (!list || !list->word) {
         printf ("Error - <cmd> is a required argument. See usage..\n\n");
         builtin_usage();
         bgtracePop();
-        bgtrace0(1,"### ENDING bgObjects_builtin()\n");
+        bgtrace0(1,"### ENDING bgCore_builtin()\n");
         return (EX_USAGE);
     }
 
-    // bgObjects _bgclassCall <oid> <refClass> <hierarchyLevel> |<objSyntaxStart> [<p1,2> ... <pN>]
+    // bgCore _bgclassCall <oid> <refClass> <hierarchyLevel> |<objSyntaxStart> [<p1,2> ... <pN>]
     if (strcmp(list->word->word, "manifestGet")==0) {
         list = list->next;
         char* param = (list) ? list->word->word : NULL;
@@ -270,20 +164,20 @@ int bgObjects_builtin(WORD_LIST* list)
         if (target.assetName) xfree(target.assetName);
 
         bgtracePop();
-        bgtrace0(1,"### ENDING 1 bgObjects_builtin()\n");
+        bgtrace0(1,"### ENDING 1 bgCore_builtin()\n");
         return EXECUTION_SUCCESS;
     }
 
 
-    // bgObjects _bgclassCall <oid> <refClass> <hierarchyLevel> |<objSyntaxStart> [<p1,2> ... <pN>]
+    // bgCore _bgclassCall <oid> <refClass> <hierarchyLevel> |<objSyntaxStart> [<p1,2> ... <pN>]
     if (strcmp(list->word->word, "_bgclassCall")==0) {
         int ret = _bgclassCall(list->next);
         bgtracePop();
-        bgtrace0(1,"### ENDING 1 bgObjects_builtin()\n");
+        bgtrace0(1,"### ENDING 1 bgCore_builtin()\n");
         return ret;
     }
 
-    // bgObjects _classUpdateVMT [-f|--force] <className>
+    // bgCore _classUpdateVMT [-f|--force] <className>
     if (strcmp(list->word->word, "_classUpdateVMT")==0) {
         list=list->next; if (!list) return (EX_USAGE);
         int forceFlag=0;
@@ -291,59 +185,59 @@ int bgObjects_builtin(WORD_LIST* list)
             list=list->next; if (!list) return (EX_USAGE);
             forceFlag=1;
         }
-//        begin_unwind_frame("bgObjects");
+//        begin_unwind_frame("bgCore");
         int result = _classUpdateVMT(list->word->word, forceFlag);
-//        discard_unwind_frame("bgObjects");
+//        discard_unwind_frame("bgCore");
         bgtracePop();
-        bgtrace0(1,"### ENDING 2 bgObjects_builtin()\n");
+        bgtrace0(1,"### ENDING 2 bgCore_builtin()\n");
         return result;
     }
 
-    // bgObjects Object_fromJSON
+    // bgCore Object_fromJSON
     if (strcmp(list->word->word, "Object_fromJSON")==0) {
         int ret = Object_fromJSON(list->next);
         bgtracePop();
-        bgtrace0(1,"### ENDING 3 bgObjects_builtin()\n");
+        bgtrace0(1,"### ENDING 3 bgCore_builtin()\n");
         return ret;
     }
 
 
-    // bgObjects ConstructObject
+    // bgCore ConstructObject
     if (strcmp(list->word->word, "ConstructObject")==0) {
         ConstructObject(list->next);
         bgtracePop();
-        bgtrace0(1,"### ENDING 3.5 bgObjects_builtin()\n");
+        bgtrace0(1,"### ENDING 3.5 bgCore_builtin()\n");
         return EXECUTION_SUCCESS;
     }
 
 
 
-    // bgObjects ConstructObjectFromJson
+    // bgCore ConstructObjectFromJson
     if (strcmp(list->word->word, "ConstructObjectFromJson")==0) {
         int ret = ConstructObjectFromJson(list->next);
         bgtracePop();
-        bgtrace0(1,"### ENDING 4 bgObjects_builtin()\n");
+        bgtrace0(1,"### ENDING 4 bgCore_builtin()\n");
         return ret;
     }
 
     fprintf(stderr, "error: command not recognized cmd='%s'\n", (list && list->word)?list->word->word:"");
     bgtracePop();
-    bgtrace0(1,"### ENDING 6 bgObjects_builtin()\n");
+    bgtrace0(1,"### ENDING 6 bgCore_builtin()\n");
     return (EX_USAGE);
 }
 
 
-/* Called when `bgObjects' is enabled and loaded from the shared object.  If this
+/* Called when `bgCore' is enabled and loaded from the shared object.  If this
    function returns 0, the load fails. */
-int bgObjects_builtin_load (char* name)
+int bgCore_builtin_load (char* name)
 {
     bgtraceOn();
     _bgtrace(0,"LOAD ############################################################################################\n");
     return (1);
 }
 
-/* Called when `bgObjects' is disabled. */
-void bgObjects_builtin_unload (char* name)
+/* Called when `bgCore' is disabled. */
+void bgCore_builtin_unload (char* name)
 {
 }
 
@@ -354,11 +248,11 @@ char *_bgclassCall_doc[] = {
 	(char *)NULL
 };
 
-struct builtin bgObjects_struct = {
-	"bgObjects",			/* builtin name */
-	bgObjects_builtin,		/* function implementing the builtin */
+struct builtin bgCore_struct = {
+	"bgCore",			/* builtin name */
+	bgCore_builtin,		/* function implementing the builtin */
 	BUILTIN_ENABLED,		/* initial flags for builtin */
 	_bgclassCall_doc,			/* array of long documentation strings. */
-	"bgObjects <oid> <className> <hierarchyLevel> '|' <objectSyntaxToExecute>",			/* usage synopsis; becomes short_doc */
+	"bgCore <oid> <className> <hierarchyLevel> '|' <objectSyntaxToExecute>",			/* usage synopsis; becomes short_doc */
 	0				/* reserved for internal use */
 };

@@ -4,7 +4,7 @@
 #     1) install the bash headers and loadable builtin Makefile.inc. On debian based distros this is the bash-builtins pacakge.
 #     2) locate the builtin Makefile.inc. On debian based distros this is at /usr/lib/bash/Makefile.inc
 #     3) copy that Makefile.inc to this project folder as Makefile and modify it to replace the example.c builtin target with
-#        the builtin taget(s) contained in this project.
+#        the builtin taget(s) contained in this project. The deps.awk script produces explicit rules for all code in the project.
 #
 
 # this is a space separated list of folders where a distro might place the loadable builtin makefile.
@@ -101,6 +101,11 @@ makeScript='
 #
 #    all .c files (builtin code and modules) build to ./bin/obj/*.o files using the same recipe
 #    builtin .so files are built into the ./bin/*.so folder
+#
+# deps.awk:
+#    The deps.awk script is passed all the .c and .h files in the project and writes out the explicit Makefile rules for the project
+#    in the section below. The script assumes that .c files in the root of the project are loadable builtins and .c files in ./lib/
+#    folder are modules used by the builtin code.
 
 INC += -I./lib
 INC += -I./includeTemp
