@@ -18,7 +18,7 @@ void bgtraceOn()
         if (!_bgtraceFD)
             fprintf(stderr, "FAILED to open trace file '/tmp/bgtrace.out' errno='%d'\n", errno);
         else
-            fprintf(_bgtraceFD, "BASH bgCore trace started\n");
+            bgtrace0(0, "BASH bgCore trace started\n");
     }
 }
 
@@ -31,6 +31,15 @@ int _bgtrace(int level, char* fmt, ...)
     va_list args;
     SH_VA_START (args, fmt);
     fprintf(_bgtraceFD, "%*s", bgtraceIndentLevel*3,"");
+    vfprintf(_bgtraceFD, fmt, args);
+    fflush(_bgtraceFD);
+    return 1; // so that we can use bgtrace in condition
+}
+
+int __bgtrace(char* fmt, ...)
+{
+    va_list args;
+    SH_VA_START (args, fmt);
     vfprintf(_bgtraceFD, fmt, args);
     fflush(_bgtraceFD);
     return 1; // so that we can use bgtrace in condition

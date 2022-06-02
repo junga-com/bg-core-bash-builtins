@@ -275,7 +275,7 @@ JSONScanner* JSONScanner_newFromStream(int fdJSON)
     this->buf = xmalloc(this->bufAllocSize);
     if (!this->buf) {xfree(this);return NULL;}
     ssize_t bytesRead;
-    while (bytesRead = read(fdJSON, this->buf, STREAMCHUNK)>0) {
+    while ( (bytesRead = read(fdJSON, this->buf, STREAMCHUNK)>0) ) {
         this->length += bytesRead;
         if (bytesRead==STREAMCHUNK) {
             this->bufAllocSize += STREAMCHUNK;
@@ -499,4 +499,97 @@ JSONToken* JSONScanner_getValue(JSONScanner* this)
     JSONToken_free(token);
     depth--;
     return jval;
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// bgCore ConstructObjectFromJson <objVar>
+
+int ConstructObjectFromJson(WORD_LIST* list)
+{
+//    begin_unwind_frame("bgCore");
+
+    if (!list || list_length(list) < 2) {
+        assertError(NULL,"Error - <objVar> and <restoreFile> are required arguments to ConstructObjectFromJson. See usage..\n\n");
+        return (EX_USAGE);
+    }
+
+    char* objVar = list->word->word;
+    list = list->next;
+    SHELL_VAR* vObjVar = ShellVar_find(objVar);
+    if (!vObjVar  && !valid_array_reference(objVar,VA_NOEXPAND))
+        ShellVar_refCreate(objVar);
+    if (vObjVar)
+        VUNSETATTR(vObjVar, att_invisible);
+
+    char* jsonFile = list->word->word;
+    list = list->next;
+
+    JSONScanner* scanner = JSONScanner_newFromFile(jsonFile);
+    if (! scanner)
+        return assertError(NULL,"could not open input file '%s' for reading\n", jsonFile);
+
+    JSONToken* jValue = JSONScanner_getValue(scanner);
+    if (jValue->type == jt_error) {
+        fprintf(stderr, "%s\n", jValue->value);
+        JSONScanner_free(scanner);
+        JSONToken_free(jValue);
+        return EXECUTION_FAILURE;
+
+    } else if (!JSONType_isAValue(jValue->type)) {
+        fprintf(stderr, "error: Expected a JSON value but got token='%s(%s)', \n", JSONTypeToString(jValue->type), jValue->value);
+        JSONScanner_free(scanner);
+        JSONToken_free(jValue);
+        return EXECUTION_FAILURE;
+
+    // we found an object
+    } else if (JSONType_isBashObj(jValue->type) && !vObjVar) { // objVar is an array ref like v[sub]
+        ShellVar_setS(objVar, ((BashObj*)jValue->value)->ref);
+    } else if (JSONType_isBashObj(jValue->type) && nameref_p(vObjVar)) {
+        ShellVar_set(vObjVar, ((BashObj*)jValue->value)->name);
+    } else if (JSONType_isBashObj(jValue->type) && (array_p(vObjVar)) ) {
+        ShellVar_arraySetI(vObjVar, 0, ((BashObj*)jValue->value)->ref);
+    } else if (JSONType_isBashObj(jValue->type) && (assoc_p(vObjVar)) ) {
+        ShellVar_assocSet(vObjVar, "0", ((BashObj*)jValue->value)->ref);
+    } else if (JSONType_isBashObj(jValue->type) ) {
+        ShellVar_set(vObjVar, ((BashObj*)jValue->value)->ref);
+
+    // we found a primitive
+    } else if (!vObjVar) { // objVar is an array ref like v[sub]
+        ShellVar_setS(objVar, jValue->value);
+    } else if (nameref_p(vObjVar)) {
+        // the user provided a nameref for objVar but the json data value is not an object or array so we create a heap_ var for
+        // the simple value which the nameref can point to
+        SHELL_VAR* transObjVar = varNewHeapVar("");
+        ShellVar_set(vObjVar, transObjVar->name);
+    } else if (array_p(vObjVar)) {
+        ShellVar_arraySetI(vObjVar, 0, jValue->value);
+    } else if (assoc_p(vObjVar)) {
+        ShellVar_assocSet(vObjVar, "0", jValue->value);
+    } else {
+        ShellVar_set(vObjVar, jValue->value);
+    }
+
+//    discard_unwind_frame ("bgCore");
+    JSONScanner_free(scanner);
+    JSONToken_free(jValue);
+    return EXECUTION_SUCCESS;
+}
+
+int Object_fromJSON(WORD_LIST* args)
+{
+    JSONScanner* scanner;
+    if (args)
+        scanner = JSONScanner_newFromFile(args->word->word);
+    else
+        scanner = JSONScanner_newFromStream(1);
+
+    BashObj* pObj = BashObj_find("this", NULL,NULL);
+    if (BashObj_isNull(pObj))
+        return assertError(NULL,"Object::fromJSON() called on an invalid object. 'this' does not exist or is the null reference");
+
+    JSONToken* endToken = JSONScanner_getObject(scanner, pObj);
+    JSONScanner_free(scanner);
+    JSONToken_free(endToken);
+    return EXECUTION_SUCCESS;
 }

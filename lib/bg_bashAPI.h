@@ -23,7 +23,7 @@
 // NOTES:
 //    * builtins.h : defines the data structures and functions to create a loadable plugin
 //                   but also brings in sys/types.h or unistd.h based on _MINIX
-//    * common.h  has interesing functions parse_and_execute, pushd.def,setattr.def,shopt,set functions, find_shell_builtin, JOB_CONTROL
+//    * common.h  has interesing functions parse_and_execute, evalstring(string, from_file, flags), pushd.def,setattr.def,shopt,set functions, find_shell_builtin, JOB_CONTROL
 //                set_dollar_vars_changed, builtin_error and other error reporting
 //    * shell.h   mostly brings in a lot of other headers.
 //                parser_remaining_input() seems interesting WRT assertError unwinding the stack
@@ -40,6 +40,12 @@
 // make this function from source.def avaialable
 extern int source_builtin (WORD_LIST *);
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Error handling
+
+extern int assertError(WORD_LIST* opts, char* fmt, ...);
+
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ShellVar
@@ -52,17 +58,24 @@ extern int source_builtin (WORD_LIST *);
 //    <function>Global : ignore local vars by this name and operate only on global vars
 //    <function>createSet : this is short for create and set as opposed to creating an uninitialized var
 
+#define ShellAtGlobalScope()                     (shell_variables==global_variables)
+#define ShellPushFunctionScope(name)             push_var_context(name, VC_FUNCENV, temporary_env)
+#define ShellPopFunctionScope()                  pop_var_context()
+
 #define ShellFunc_find(funcname)                 find_function(funcname)
 extern SHELL_VAR* ShellFunc_findWithSuffix(char* funcname, char* suffix);
+extern int ShellFunc_executeS(WORD_LIST* args);
+extern int ShellFunc_execute(SHELL_VAR* func, WORD_LIST* args);
 
-#define ShellVar_find(varname)                  find_variable(varname)
+
+extern SHELL_VAR* ShellVar_find(char* varname);
 #define ShellVar_findGlobal(varname)            find_global_variable(varname)
 extern SHELL_VAR* ShellVar_findWithSuffix(char* varname, char* suffix);
-#define ShellVar_create(varname)                make_local_variable(varname,0)
+// create will return an existing variable or create a new one
+extern SHELL_VAR* ShellVar_create(char* varname);
 #define ShellVar_createGlobal(varname)          bind_global_variable(varname, NULL, ASS_FORCE)
 #define ShellVar_createGlobalSet(varname,value) bind_global_variable(varname, value, ASS_FORCE)
-#define ShellVar_createSet(varname, value)      bind_variable_value(make_local_variable(varname,0), value, 0)
-extern SHELL_VAR* ShellVar_findOrCreate(char* varname);
+#define ShellVar_createSet(varname, value)      bind_variable_value(ShellVar_create(varname), value, 0)
 #define ShellVar_unset(var)                     unbind_variable(var->name)
 #define ShellVar_unsetS(varname)                unbind_variable(varname)
 #define ShellVar_get(var)                       get_variable_value(var)
@@ -71,13 +84,15 @@ extern void ShellVar_setS(char* varname, char* value);
 
 // note that ShellVar_find will return the non-ref SHELL_VAR refered to by varname. ShellVar_refFind allows us to manipulate the ref
 #define ShellVar_refFind(varname)              find_variable_noref(varname)
+// create will return an existing variable or create a new one
 extern SHELL_VAR* ShellVar_refCreate(char* varname);
 extern SHELL_VAR* ShellVar_refCreateSet(char* varname, char* value);
 #define ShellVar_refUnsetS(varname)            unbind_variable_noref(varname)
 #define ShellVar_refUnset(var)                 unbind_variable_noref(var->name)
 
 
-#define ShellVar_arrayCreate(varname)          make_local_array_variable(varname,0)
+// create will return an existing variable or create a new one
+extern SHELL_VAR* ShellVar_arrayCreate(char* varname);
 #define ShellVar_arrayCreateGlobal(varname)    make_new_array_variable(varname)
 #define ShellVar_arrayUnset(var)               unbind_variable(var->name)
 #define ShellVar_arrayUnsetI(var, index)       array_dispose_element(array_remove(array_cell(var), index))
@@ -88,12 +103,14 @@ extern SHELL_VAR* ShellVar_refCreateSet(char* varname, char* value);
 #define ShellVar_arraySetS(var,indexStr,value) bind_array_element(var, ShellVar_arrayStrToIndex(var,indexStr), value, 0)
 #define ShellVar_arrayAppend(var,value)        bind_array_element(var, 1+array_max_index(array_cell(var)), value, 0)
 #define ShellVar_arrayCopy(dst,src)            do { array_dispose(array_cell(dst)); var_setarray(dst, array_copy(array_cell(src))); } while(0)
+#define ShellVar_arrayClear(var)               array_flush(array_cell(var))
 #define ShellVar_arrayStrToIndex(var,indexStr) ((isNumber(indexStr)) ? atoi(indexStr) : 1+array_max_index(array_cell(var)))
 
 // this does not use array_to_word_list() because the WORD_LIST used in arrays dont use the same allocation as in the rest
 extern WORD_LIST* ShellVar_arrayToWordList(SHELL_VAR* var);
 
-#define ShellVar_assocCreate(varname)          make_local_assoc_variable(varname, 0)
+// create will return an existing variable or create a new one
+extern SHELL_VAR* ShellVar_assocCreate(char* varname);
 #define ShellVar_assocCreateGlobal(varname)    make_new_assoc_variable(varname)
 #define ShellVar_assocUnset(var)               unbind_variable(var->name)
 #define ShellVar_assocUnsetEl(var)             assoc_remove(assoc_cell(var->name))
@@ -103,31 +120,37 @@ extern WORD_LIST* ShellVar_arrayToWordList(SHELL_VAR* var);
 
 extern void ShellVar_assocCopyElements(HASH_TABLE* dest, HASH_TABLE* source);
 
-
-
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // WordList
 // native WORD_LIST functions are mostly in make_cmd.h
 
 #define WordList_toString(list)   string_list(list)
+#define WordList_fromString(contents, seperators, quotedFlag)    list_string(contents, seperators, quotedFlag)
+#define IFS " \t\n\0"
 
-// this preserves the head so that if something else will free the list, it will free the node we add also
-extern void WordList_unshift(WORD_LIST* list, char* str);
-extern char* WordList_shift(WORD_LIST* list);
+extern WORD_LIST* WordList_copy(WORD_LIST* src);
+extern WORD_LIST* WordList_copyR(WORD_LIST* src);
+extern WORD_LIST* WordList_join(WORD_LIST* args1, WORD_LIST* args2);
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // AssocItr
 
 typedef struct {
-    SHELL_VAR* vVar;
     HASH_TABLE* table;
     BUCKET_CONTENTS* item;
     int position;
 } AssocItr;
 
-extern BUCKET_CONTENTS* AssocItr_init(AssocItr* pI, SHELL_VAR* vVar);
+extern BUCKET_CONTENTS* AssocItr_init(AssocItr* pI, HASH_TABLE* pTbl);
 extern BUCKET_CONTENTS* AssocItr_next(AssocItr* pI);
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Debugging
+//
+extern char* ShellVarFlagsToString(int flags);
+extern void ShellContext_dump(VAR_CONTEXT* varCntx, int includeVars);
 
 
 #endif // _bg_bashAPI_H_

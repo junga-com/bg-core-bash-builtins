@@ -1,12 +1,53 @@
 
 #include "bg_bashAPI.h"
 
-SHELL_VAR* ShellVar_findOrCreate(char* varname)
+#include <execute_cmd.h>
+
+#include "BGString.h"
+
+
+// When a builtin function calls assertError, it may or may not return from the assertError call. If the script has a Try/Catch
+// block in the same PID as the builtin is running, then it will return and all the C functions on the stack has to return back up.
+// I wonder if its possible to change this to do a long jump back to the bgCore() function and then unwind the stack using the
+// begin_unwind_frame mechanism.
+// If the assertError is not being caught, then our PID will be killed and we do not need to worry b/c it will not return
+// If the assertError is being caught, it will kill any intermediate PIDs and then send the PID with the Try/Catch a SIG2. If this
+// builtin code is running in that PID, the C code will continue to run until it returns and then the SIG2 handler will be called
+// which installs a DEBUG handler which will skip code until it finds the Catch:
+int assertError(WORD_LIST* opts, char* fmt, ...)
 {
-    SHELL_VAR* var = find_variable(varname);
-    if (!var)
-        var = ShellVar_create(varname);
-    return var;
+    WORD_LIST* args = NULL;
+
+    // format the msg and make it the last itme in args (we build args backwards)
+    BGString msg;    BGString_init(&msg, 100);
+    va_list vargs;   SH_VA_START (vargs, fmt);
+    BGString_appendfv(&msg, "", fmt, vargs);
+    args = make_word_list( make_word(msg.buf) , args);
+    BGString_free(&msg);
+
+    // now add the opts to the front
+    args = WordList_join(opts, args);
+
+    // and lastly add the funcname we are calling (b/c execute_shell_function burns the first arg)
+    args = make_word_list( make_word("assertError") , args);
+
+    __bgtrace("!!! assertError in builtin: %s\n", msg);
+
+    SHELL_VAR* func = ShellFunc_find("assertError");
+    execute_shell_function(func, args);
+
+    return 26;
+}
+
+
+
+
+SHELL_VAR* ShellVar_create(char* varname)
+{
+    if (shell_variables == global_variables)
+        return bind_global_variable(varname, NULL, ASS_FORCE);
+    else
+        return make_local_variable(varname,0);
 }
 
 void ShellVar_setS(char* varname, char* value)
@@ -14,7 +55,7 @@ void ShellVar_setS(char* varname, char* value)
     if (valid_array_reference(varname,VA_NOEXPAND))
         assign_array_element(varname,value,0);
     else {
-        SHELL_VAR* var = ShellVar_findOrCreate(varname);
+        SHELL_VAR* var = ShellVar_create(varname);
         bind_variable_value(var,value,0);
     }
 }
@@ -22,18 +63,27 @@ void ShellVar_setS(char* varname, char* value)
 
 SHELL_VAR* ShellVar_refCreate(char* varname)
 {
-    SHELL_VAR* var = make_local_variable(varname,0);
+    SHELL_VAR* var = ShellVar_create(varname);
     VSETATTR(var, att_nameref);
     return var;
 }
 
 SHELL_VAR* ShellVar_refCreateSet(char* varname, char* value)
 {
-    SHELL_VAR* var = make_local_variable(varname,0);
+    SHELL_VAR* var = ShellVar_create(varname);
     VSETATTR(var, att_nameref);
     bind_variable_value(var,value,0);
     return var;
 }
+
+SHELL_VAR* ShellVar_arrayCreate(char* varname)
+{
+    if (shell_variables == global_variables)
+        return make_new_array_variable(varname);
+    else
+        return make_local_array_variable(varname,0);
+}
+
 
 // this does not use array_to_word_list() because the WORD_LIST used in arrays dont use the same allocation as in the rest
 WORD_LIST* ShellVar_arrayToWordList(SHELL_VAR* var)
@@ -51,12 +101,66 @@ WORD_LIST* ShellVar_arrayToWordList(SHELL_VAR* var)
     return ret;
 }
 
+SHELL_VAR* ShellVar_assocCreate(char* varname)
+{
+    if (shell_variables == global_variables)
+        return make_new_assoc_variable(varname);
+    else
+        return make_local_assoc_variable(varname, 0);
+}
+
+
+
 SHELL_VAR* ShellFunc_findWithSuffix(char* funcname, char* suffix)
 {
     char* buf = save2string(funcname, suffix);
     SHELL_VAR* vVar = find_function(buf);
     xfree(buf);
     return vVar;
+}
+
+// the first arg is the shell function name
+int ShellFunc_executeS(WORD_LIST* args)
+{
+    if (!args)
+        return assertError(NULL,"ShellFunc_execute called without a function name in args");
+
+    char* funcname = args->word->word;
+    SHELL_VAR* func = ShellFunc_find(funcname);
+    if (!func)
+        return assertError(NULL,"ShellFunc_execute: could not find function '%s'",funcname);
+
+    ShellVar_unsetS("catch_errorCode");
+    int ret = execute_shell_function(func, args);
+    if (ShellVar_findGlobal("catch_errorCode"))
+        return 34;
+    return ret;
+}
+
+int ShellFunc_execute(SHELL_VAR* func, WORD_LIST* args)
+{
+    if (!args)
+        return assertError(NULL,"ShellFunc_execute called with empty args");
+
+    ShellVar_unsetS("catch_errorCode");
+    int ret = execute_shell_function(func, args);
+    if (ShellVar_findGlobal("catch_errorCode"))
+        return 34;
+    return ret;
+}
+
+
+
+
+
+SHELL_VAR* ShellVar_find(char* varname)
+{
+    SHELL_VAR* retVal = find_variable(varname);
+    // if varname is an uninitialized nameref, find_variable(varname) returns NULL because it follows the nameref even when its
+    // invisible
+    if (!retVal)
+        retVal = find_variable_noref(varname);
+    return retVal;
 }
 
 
@@ -89,25 +193,41 @@ void ShellVar_assocCopyElements(HASH_TABLE* dest, HASH_TABLE* source)
 // WordList
 // native WORD_LIST functions are mostly in make_cmd.h
 
-void WordList_unshift(WORD_LIST* list, char* str)
+WORD_LIST* WordList_copy(WORD_LIST* src)
 {
-    WORD_DESC* newWord = alloc_word_desc();
-    newWord->word = list->word->word;
-    newWord->flags = list->word->flags;
-    WORD_LIST* wl = make_word_list(newWord, list->next);
-    list->next = wl;
-    list->word->word = savestring(str);
-    make_word_flags(list->word, str);
+    WORD_LIST* dst = (src) ? make_word_list(make_word(src->word->word),NULL) : NULL;
+    WORD_LIST* tail = dst;
+    src = src->next;
+    while (src) {
+        tail->next = make_word_list(make_word(src->word->word),NULL);
+        tail = tail->next;
+        src = src->next;
+    }
+    return dst;
 }
 
-char* WordList_shift(WORD_LIST* list)
+WORD_LIST* WordList_copyR(WORD_LIST* src)
 {
-    char* ret = savestring(list->word->word);
-    WORD_LIST* temp = list;
-    list = list->next;
-    temp->next = NULL;
-    dispose_words(temp);
-    return ret;
+    WORD_LIST* dst = NULL;
+    while (src) {
+        dst = make_word_list(make_word(src->word->word),dst);
+        src = src->next;
+    }
+    return dst;
+}
+
+WORD_LIST* WordList_join(WORD_LIST* args1, WORD_LIST* args2)
+{
+    if (!args1)
+        return args2;
+    if (!args2)
+        return args1;
+
+    WORD_LIST* retVal = args1;
+    WORD_LIST* t=args1; while (t && t->next) t=t->next;
+    t->next = args2;
+
+    return retVal;
 }
 
 
@@ -115,10 +235,9 @@ char* WordList_shift(WORD_LIST* list)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // AssocItr
 
-BUCKET_CONTENTS* AssocItr_init(AssocItr* pI, SHELL_VAR* vVar)
+BUCKET_CONTENTS* AssocItr_init(AssocItr* pI, HASH_TABLE* pTbl)
 {
-    pI->vVar=vVar;
-    pI->table = assoc_cell(pI->vVar);
+    pI->table = pTbl;
     pI->position=0;
     pI->item=NULL;
     pI->item = AssocItr_next(pI);
@@ -139,4 +258,128 @@ BUCKET_CONTENTS* AssocItr_next(AssocItr* pI)
         pI->item = NULL;
     }
     return pI->item;
+}
+
+
+char* vcFlagsToString(VAR_CONTEXT* vc)
+{
+    // #define VC_HASLOCAL	0x01
+    // #define VC_HASTMPVAR	0x02
+    // #define VC_FUNCENV	0x04	/* also function if name != NULL */
+    // #define VC_BLTNENV	0x08	/* builtin_env */
+    // #define VC_TEMPENV	0x10	/* temporary_env */
+    // #define VC_TEMPFLAGS	(VC_FUNCENV|VC_BLTNENV|VC_TEMPENV)
+    // #define vc_istempenv(vc)	(((vc)->flags & (VC_TEMPFLAGS)) == VC_TEMPENV)
+    // #define vc_istempscope(vc)	(((vc)->flags & (VC_TEMPENV|VC_BLTNENV)) != 0)
+
+    BGString retVal;
+    BGString_init(&retVal, 500);
+    BGString_appendf(&retVal, "", "(%0.2X) ", vc->flags);
+
+    if (vc->flags&VC_HASLOCAL)  BGString_append(&retVal,"VC_HASLOCAL",",");
+    if (vc->flags&VC_HASTMPVAR) BGString_append(&retVal,"VC_HASTMPVAR",",");
+    if (vc->flags&VC_FUNCENV)   BGString_append(&retVal,"VC_FUNCENV",",");
+    if (vc->flags&VC_BLTNENV)   BGString_append(&retVal,"VC_BLTNENV",",");
+    if (vc->flags&VC_TEMPENV)   BGString_append(&retVal,"VC_TEMPENV",",");
+
+    if (vc_istempenv(vc))   BGString_append(&retVal,"vc_istempenv",",");
+    if (vc_istempscope(vc)) BGString_append(&retVal,"vc_istempscope",",");
+    return retVal.buf;
+}
+
+#define MAX(a, b) (((a) < (b))? (b) : (a))
+
+void ShellContext_dump(VAR_CONTEXT* startCntx, int includeVars)
+{
+    // typedef struct var_context {
+    //   char *name;		/* empty or NULL means global context */
+    //   int scope;		/* 0 means global context */
+    //   int flags;
+    //   struct var_context *up;	/* previous function calls */
+    //   struct var_context *down;	/* down towards global context */
+    //   HASH_TABLE *table;		/* variables at this scope */
+    // } VAR_CONTEXT;
+    int maxCntxNameLen = 0;
+    for (VAR_CONTEXT* cntx=startCntx; cntx;  cntx=cntx->down) {
+        maxCntxNameLen = MAX(maxCntxNameLen, (cntx->name)?strlen(cntx->name):0 );
+    }
+
+    char* label = "VAR_CONTEXT";
+    for (VAR_CONTEXT* cntx=startCntx; cntx;  cntx=cntx->down) {
+        char* flagStr = vcFlagsToString(cntx);
+        __bgtrace("%11s: '%-*s' scope='%d'(%s) up='%-4s'  varCount=%3d  flags='%s'\n",
+            label,
+            maxCntxNameLen, cntx->name,
+            cntx->scope,
+            (cntx==global_variables)?"GBL":((cntx==shell_variables)?"STR":"mid"),
+            (cntx->up)?"HAS":"null",
+            HASH_ENTRIES(cntx->table),
+            flagStr);
+        if (includeVars) {
+            AssocItr itr; AssocItr_init(&itr, cntx->table);
+            BUCKET_CONTENTS* bVar;
+            int maxVarnameLen = 0;
+            int count = (includeVars==1)?20:includeVars;
+            while ((count-->0) && (bVar = AssocItr_next(&itr))) {
+                maxVarnameLen = MAX(maxVarnameLen, strlen(bVar->key));
+            }
+            AssocItr_init(&itr, cntx->table);
+            count = (includeVars==1)?20:includeVars;
+            while ((count-->0) && (bVar = AssocItr_next(&itr))) {
+                // typedef struct variable {
+                //   char *name;			/* Symbol that the user types. */
+                //   char *value;			/* Value that is returned. */
+                //   char *exportstr;		/* String for the environment. */
+                //   sh_var_value_func_t *dynamic_value;	/* Function called to return a `dynamic'
+                // 				   value for a variable, like $SECONDS
+                // 				   or $RANDOM. */
+                //   sh_var_assign_func_t *assign_func; /* Function called when this `special
+                // 				   variable' is assigned a value in
+                // 				   bind_variable. */
+                //   int attributes;		/* export, readonly, array, invisible... */
+                //   int context;			/* Which context this variable belongs to. */
+                // } SHELL_VAR;
+
+                SHELL_VAR* pVar = (SHELL_VAR*)bVar->data;
+                char* flagStr = ShellVarFlagsToString(pVar->attributes);
+                __bgtrace("   %*s%-*s : %s\n",
+                    maxCntxNameLen,"",
+                    maxVarnameLen, bVar->key,
+                    flagStr
+                );
+                xfree(flagStr);
+            }
+        }
+        label = "";
+        xfree(flagStr);
+    }
+}
+
+char* ShellVarFlagsToString(int flags) {
+    BGString retVal;
+    BGString_init(&retVal, 500);
+    BGString_appendf(&retVal, "", "(%0.2X) ", flags);
+
+    if (flags&att_exported)   BGString_append(&retVal, "exported", ",");
+    if (flags&att_readonly)   BGString_append(&retVal, "readonly", ",");
+    if (flags&att_array)      BGString_append(&retVal, "array", ",");
+    if (flags&att_function)   BGString_append(&retVal, "function", ",");
+    if (flags&att_integer)    BGString_append(&retVal, "integer", ",");
+    if (flags&att_local)      BGString_append(&retVal, "local", ",");
+    if (flags&att_assoc)      BGString_append(&retVal, "assoc", ",");
+    if (flags&att_trace)      BGString_append(&retVal, "trace", ",");
+    if (flags&att_uppercase)  BGString_append(&retVal, "uppercase", ",");
+    if (flags&att_lowercase)  BGString_append(&retVal, "lowercase", ",");
+    if (flags&att_capcase)    BGString_append(&retVal, "capcase", ",");
+    if (flags&att_nameref)    BGString_append(&retVal, "nameref", ",");
+    if (flags&att_invisible)  BGString_append(&retVal, "invisible", ",");
+    if (flags&att_nounset)    BGString_append(&retVal, "nounset", ",");
+    if (flags&att_noassign)   BGString_append(&retVal, "noassign", ",");
+    if (flags&att_imported)   BGString_append(&retVal, "imported", ",");
+    if (flags&att_special)    BGString_append(&retVal, "special", ",");
+    if (flags&att_nofree)     BGString_append(&retVal, "nofree", ",");
+    if (flags&att_regenerate) BGString_append(&retVal, "regenerate", ",");
+    if (flags&att_tempvar)    BGString_append(&retVal, "tempvar", ",");
+    if (flags&att_propagate)  BGString_append(&retVal, "propagate", ",");
+    return retVal.buf;
 }

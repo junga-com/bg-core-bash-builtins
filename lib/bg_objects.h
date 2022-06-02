@@ -2,7 +2,11 @@
 #if !defined (_bg_objects_H_)
 #define _bg_objects_H_
 
+
 #include "bg_bashAPI.h"
+
+extern void onUnload_objects();
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // BashObjects MemberType
@@ -22,11 +26,10 @@ typedef enum {
 
 extern char* MemberTypeToString(MemberType mt, char* errorMsg, char* _rsvMemberValue);
 
-extern int setErrorMsg(char* fmt, ...);
-
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // BashObjRef
 
+// OBSOLETE? the BashObj struct has refClass and superCallFlag. Maybe embrace the Ref vars as one way to init the BashObj
 typedef struct {
   char oid[255];
   char className[255];
@@ -37,21 +40,24 @@ extern char* extractOID(char* objRef);
 
 extern int BashObjRef_init(BashObjRef* pRef, char* objRefStr);
 
-// TODO: where is BashObjRef_free?
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // BashObj
 
 typedef struct _BashObj {
-  char name[255];
+  char name[255]; // maybe get rid of this in favore of vThis->name
   char ref[300];
   SHELL_VAR* vThis;
   SHELL_VAR* vThisSys;
   SHELL_VAR* vCLASS;
   SHELL_VAR* vVMT;
 
+  // objRef state
   char* refClass;
   int superCallFlag;
+
+  // internal state
+  HASH_TABLE* namerefMembers; // members for which we created a nameref in the method context (used to incrementally add during ctors)
 } BashObj;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -90,7 +96,10 @@ extern int BashObj_setMemberValue(BashObj* pObj, char* memberName, char* value);
 extern void BashObj_setClass(BashObj* pObj, char* newClassName);
 extern char* BashObj_getMethod(BashObj* pObj, char* methodName);
 extern int BashObj_gotoMemberObj(BashObj* pObj, char* memberName, int allowOnDemandObjCreation, int* pErr);
-extern int BashObj_setupMethodCallContext(BashObj* pObj);
+
+typedef enum {sm_thisAndFriends, sm_membersOnly, sm_wholeShebang, sm_noThanks} BashObjectSetupMode;
+extern int BashObj_setupMethodCallContext(BashObj* pObj, BashObjectSetupMode mode, char* _METHOD);
+
 extern int BashClass_init(BashClass* pCls, char* className);
 extern BashClass* BashClass_find(char* name);
 extern int BashClass_isVMTDirty(BashClass* pCls, char* currentCacheNumStr);

@@ -45,5 +45,6 @@ extern FILE* _bgtraceFD;
 extern int bgtraceIndentLevel;
 extern void bgtraceOn();
 extern int _bgtrace(int level, char* fmt, ...);
+extern int __bgtrace(char* fmt, ...);
 
 #endif /* _bg_debug_H_ */

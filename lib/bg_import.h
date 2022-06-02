@@ -12,5 +12,6 @@
 
 extern int importManifestCriteria(ManifestRecord* rec, ManifestRecord* target);
 extern int importBashLibrary(char* scriptName, int flags, char** retVar);
+extern char* findInLibPaths(char* scriptName);
 
 #endif // _bg_import_H_

@@ -3,8 +3,11 @@
 
 #include <errno.h>
 #include <regex.h>
+#include <sys/stat.h>
 
 #include "bg_bashAPI.h"
+
+
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -36,7 +39,7 @@ char* savestringn(char* x, int n)
 
 char* save2string(char* s1, char* s2)
 {
-    char* p = xmalloc(strlen(s1) + strlen(s2 +1));
+    char* p = xmalloc(strlen(s1) + strlen(s2)+1);
     strcpy(p, s1);
     strcat(p, s2);
     return p;
@@ -75,7 +78,7 @@ size_t freadline(FILE* file, char* buf, size_t* pBufAllocSize)
         readResult = fgets(buf+readLen, *pBufAllocSize/2,file);
         readLen = strlen(buf+readLen)+readLen;
     }
-    if (buf[readLen-1] == '\n') {
+    if (readLen>0 && buf[readLen-1] == '\n') {
         buf[readLen-1] = '\0';
         readLen--;
     }
@@ -101,4 +104,57 @@ int matchFilter(char* filter, char* value)
         return 1;
     }
     return regexec(&regex, value, 0, NULL, 0) == 0;
+}
+
+
+void hexDump(char *desc, void *addr, int len)
+{
+    int i;
+    unsigned char buff[17];
+    unsigned char *pc = (unsigned char*)addr;
+
+    // Output description if given.
+    if (desc != NULL)
+        __bgtrace("%s:\n", desc);
+
+    // Process every byte in the data.
+    for (i = 0; i < len; i++) {
+        // Multiple of 16 means new line (with line offset).
+
+        if ((i % 16) == 0) {
+            // Just don't print ASCII for the zeroth line.
+            if (i != 0)
+                __bgtrace("  %s\n", buff);
+
+            // Output the offset.
+            __bgtrace("  %04x ", i);
+        }
+
+        // Now the hex code for the specific character.
+        __bgtrace(" %02x", pc[i]);
+
+        // And store a printable ASCII character for later.
+        if ((pc[i] < 0x20) || (pc[i] > 0x7e)) {
+            buff[i % 16] = '.';
+        } else {
+            buff[i % 16] = pc[i];
+        }
+
+        buff[(i % 16) + 1] = '\0';
+    }
+
+    // Pad out last line if not exactly 16 characters.
+    while ((i % 16) != 0) {
+        __bgtrace("   ");
+        i++;
+    }
+
+    // And print the final ASCII bit.
+    __bgtrace("  %s\n", buff);
+}
+
+
+int fsExists(const char* file) {
+    struct stat buf;
+    return (stat(file, &buf) == 0);
 }

@@ -73,5 +73,14 @@ extern JSONToken* JSONScanner_getToken(JSONScanner* this);
 extern JSONToken* JSONScanner_getObject(JSONScanner* this, BashObj* pObj);
 extern JSONToken* JSONScanner_getValue(JSONScanner* this);
 
+#define JSONScanner_free(this) do { xfree(this->buf); xfree(this); this=NULL; } while(0)
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// bgCore ConstructObjectFromJson <objVar>
+
+extern int ConstructObjectFromJson(WORD_LIST* list);
+extern int Object_fromJSON(WORD_LIST* args);
+
 
 #endif // _bg_json_H_

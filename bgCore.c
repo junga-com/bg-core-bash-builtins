@@ -12,96 +12,6 @@
 #include "bg_import.h"
 
 
-
-
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// bgCore ConstructObjectFromJson <objVar>
-int ConstructObjectFromJson(WORD_LIST* list)
-{
-//    begin_unwind_frame("bgCore");
-
-    if (!list || list_length(list) < 2) {
-        setErrorMsg("Error - <objVar> and <restoreFile> are required arguments to ConstructObjectFromJson. See usage..\n\n");
-        return (EX_USAGE);
-    }
-
-    char* objVar = list->word->word;
-    list = list->next;
-    SHELL_VAR* vObjVar = ShellVar_find(objVar);
-    if (!vObjVar  && !valid_array_reference(objVar,VA_NOEXPAND))
-        ShellVar_refCreate(objVar);
-    if (vObjVar)
-        VUNSETATTR(vObjVar, att_invisible);
-
-    char* jsonFile = list->word->word;
-    list = list->next;
-
-    JSONScanner* scanner = JSONScanner_newFromFile(jsonFile);
-    if (! scanner)
-        return setErrorMsg("could not open input file '%s' for reading\n", jsonFile);
-
-    JSONToken* jValue = JSONScanner_getValue(scanner);
-    if (jValue->type == jt_error) {
-        fprintf(stderr, "%s\n", jValue->value);
-        JSONToken_free(jValue);
-        return EXECUTION_FAILURE;
-
-    } else if (!JSONType_isAValue(jValue->type)) {
-        fprintf(stderr, "error: Expected a JSON value but got token='%s(%s)', \n", JSONTypeToString(jValue->type), jValue->value);
-        JSONToken_free(jValue);
-        return EXECUTION_FAILURE;
-
-    // we found an object
-    } else if (JSONType_isBashObj(jValue->type) && !vObjVar) { // objVar is an array ref like v[sub]
-        ShellVar_setS(objVar, ((BashObj*)jValue->value)->ref);
-    } else if (JSONType_isBashObj(jValue->type) && nameref_p(vObjVar)) {
-        ShellVar_set(vObjVar, ((BashObj*)jValue->value)->name);
-    } else if (JSONType_isBashObj(jValue->type) && (array_p(vObjVar)) ) {
-        ShellVar_arraySetI(vObjVar, 0, ((BashObj*)jValue->value)->ref);
-    } else if (JSONType_isBashObj(jValue->type) && (assoc_p(vObjVar)) ) {
-        ShellVar_assocSet(vObjVar, "0", ((BashObj*)jValue->value)->ref);
-    } else if (JSONType_isBashObj(jValue->type) ) {
-        ShellVar_set(vObjVar, ((BashObj*)jValue->value)->ref);
-
-    // we found a primitive
-    } else if (!vObjVar) { // objVar is an array ref like v[sub]
-        ShellVar_setS(objVar, jValue->value);
-    } else if (nameref_p(vObjVar)) {
-        // the user provided a nameref for objVar but the json data value is not an object or array so we create a heap_ var for
-        // the simple value which the nameref can point to
-        SHELL_VAR* transObjVar = varNewHeapVar("");
-        ShellVar_set(vObjVar, transObjVar->name);
-    } else if (array_p(vObjVar)) {
-        ShellVar_arraySetI(vObjVar, 0, jValue->value);
-    } else if (assoc_p(vObjVar)) {
-        ShellVar_assocSet(vObjVar, "0", jValue->value);
-    } else {
-        ShellVar_set(vObjVar, jValue->value);
-    }
-
-//    discard_unwind_frame ("bgCore");
-    JSONToken_free(jValue);
-    return EXECUTION_SUCCESS;
-}
-
-int Object_fromJSON(WORD_LIST* args)
-{
-    JSONScanner* scanner;
-    if (args)
-        scanner = JSONScanner_newFromFile(args->word->word);
-    else
-        scanner = JSONScanner_newFromStream(1);
-
-    BashObj* pObj = BashObj_find("this", NULL,NULL);
-    if (BashObj_isNull(pObj))
-        return setErrorMsg("Object::fromJSON() called on an invalid object. 'this' does not exist or is the null reference");
-
-    JSONToken* endToken = JSONScanner_getObject(scanner, pObj);
-    JSONToken_free(endToken);
-    return EXECUTION_SUCCESS;
-}
-
 char* bgOptionGetOpt(WORD_LIST** args)
 {
     char* param = (*args)->word->word;
@@ -125,23 +35,165 @@ char* bgOptionGetOpt(WORD_LIST** args)
     }
 }
 
+void testAssertError(WORD_LIST* args)
+{
+    printf("testAssertError STARTING (%s)\n", WordList_toString(args));
+
+    assertError(WordList_fromString("-v name",IFS,0), "this is a test error '%s'", "hooters");
+    // SHELL_VAR* func = ShellFunc_find("myCode");
+    // args = make_word_list( make_word("thisfunc") ,args);
+    // execute_shell_function(func, args);
+
+    printf("testAssertError ENDING\n");
+}
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // bgCore <cmd> ....
 // This is the entry point builtin function. It dispatches the call to the specific function based on the first command word
 int bgCore_builtin(WORD_LIST* list)
 {
-    bgtrace1(1,"### STRing bgCore_builtin(%s)\n", WordList_toString(list));
-    bgtracePush();
+    int ret = EXECUTION_SUCCESS;
+
+    char* label = ""; if (!label);
+    bgtrace1(1,"### STRing bgCore_builtin(%s)\n", label=WordList_toString(list)); bgtracePush();
     if (!list || !list->word) {
-        printf ("Error - <cmd> is a required argument. See usage..\n\n");
+        fprintf(stderr, "Error - <cmd> is a required argument. See usage..\n\n");
         builtin_usage();
-        bgtracePop();
-        bgtrace0(1,"### ENDING bgCore_builtin()\n");
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
         return (EX_USAGE);
     }
 
+    // bgCore ping
+    if (strcmp(list->word->word, "ping")==0) {
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+        return EXECUTION_SUCCESS;
+    }
+
+
+
+    // ### Objects ###############################################################################################################
+
+    // bgCore ConstructObject
+    if (strcmp(list->word->word, "ConstructObject")==0) {
+        BashObj* pObj = ConstructObject(list->next);
+        xfree(pObj);
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+        return EXECUTION_SUCCESS;
+    }
+
+    // bgCore DeclareClassEnd
+    if (strcmp(list->word->word, "DeclareClassEnd")==0) {
+        list=list->next;
+        DeclareClassEnd(list->word->word);
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+        return EXECUTION_SUCCESS;
+    }
+
     // bgCore _bgclassCall <oid> <refClass> <hierarchyLevel> |<objSyntaxStart> [<p1,2> ... <pN>]
+    if (strcmp(list->word->word, "_bgclassCall")==0) {
+        ret = _bgclassCall(list->next);
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+        return ret;
+    }
+
+    // bgCore _classUpdateVMT [-f|--force] <className>
+    if (strcmp(list->word->word, "_classUpdateVMT")==0) {
+        list=list->next; if (!list) return (EX_USAGE);
+        int forceFlag=0;
+        if (strcmp(list->word->word,"-f")==0 || strcmp(list->word->word,"--force")==0) {
+            list=list->next; if (!list) return (EX_USAGE);
+            forceFlag=1;
+        }
+//        begin_unwind_frame("bgCore");
+        int result = _classUpdateVMT(list->word->word, forceFlag);
+//        discard_unwind_frame("bgCore");
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+        return result;
+    }
+
+
+    // ### JSON ##################################################################################################################
+
+    // bgCore Object_fromJSON
+    if (strcmp(list->word->word, "Object_fromJSON")==0) {
+        ret = Object_fromJSON(list->next);
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+        return ret;
+    }
+
+    // bgCore ConstructObjectFromJson
+    if (strcmp(list->word->word, "ConstructObjectFromJson")==0) {
+        ret = ConstructObjectFromJson(list->next);
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+        return ret;
+    }
+
+
+    // ### MISC ##################################################################################################################
+
+
+    // bgCore ShellContext_dump
+    if (strcmp(list->word->word, "ShellContext_dump")==0) {
+        list=list->next;
+        ShellContext_dump(shell_variables, (list!=NULL));
+        //ShellContext_dump(global_variables, (list!=NULL));
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+        return ret;
+    }
+
+
+
+    // bgCore findInLibPaths
+    if (strcmp(list->word->word, "findInLibPaths")==0) {
+        list=list->next;
+        char* foundPath = findInLibPaths(list->word->word);
+        list=list->next;
+        if (list)
+            ShellVar_setS(list->word->word, foundPath);
+        else
+            printf("%s\n",foundPath);
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+        return ret;
+    }
+
+    // bgCore import <scriptName>
+    if (strcmp(list->word->word, "import")==0) {
+        list = list->next;
+        char* param = (list) ? list->word->word : NULL;
+        int importFlags = 0;
+        while (param && *param == '-') {
+            param = (*(param+1)=='-') ? param+2 : param+1;
+            switch (*param) {
+              case 'd': importFlags |= im_devOnlyFlag    ; break;
+              case 'f': importFlags |= im_forceFlag      ; break;
+              case 'e': importFlags |= im_stopOnErrorFlag; break;
+              case 'q': importFlags |= im_quietFlag      ; break;
+              case 'g': importFlags |= im_getPathFlag    ; break;
+            }
+            list = list->next;
+            param = (list) ? list->word->word : NULL;
+        }
+        if (!list)
+            return assertError(NULL,"<scriptname> is a required argument to import\n");
+        char* scriptName = list->word->word;
+        list = list->next;
+
+        char* scriptPath = NULL;
+        ret = importBashLibrary(scriptName, importFlags, &scriptPath);
+        if (importFlags&im_getPathFlag) {
+            if (list)
+                ShellVar_setS(list->word->word, scriptPath);
+            else
+                printf("%s\n",scriptPath);
+        }
+        if (scriptPath) xfree(scriptPath);
+
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+        return ret;
+    }
+
+    // bgCore manifestGet [-p|--pkg=<pkgMatch>] [-o|--output='$n'] <assetTypeMatch> <assetNameMatch>
     if (strcmp(list->word->word, "manifestGet")==0) {
         list = list->next;
         char* param = (list) ? list->word->word : NULL;
@@ -175,100 +227,21 @@ int bgCore_builtin(WORD_LIST* list)
         if (target.assetType) xfree(target.assetType);
         if (target.assetName) xfree(target.assetName);
 
-        bgtracePop();
-        bgtrace0(1,"### ENDING 1 bgCore_builtin()\n");
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+        return EXECUTION_SUCCESS;
+    }
+
+    // bgCore testAssertError
+    if (strcmp(list->word->word, "testAssertError")==0) {
+        testAssertError(list->next);
+        bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
         return EXECUTION_SUCCESS;
     }
 
 
-    // bgCore _bgclassCall <oid> <refClass> <hierarchyLevel> |<objSyntaxStart> [<p1,2> ... <pN>]
-    if (strcmp(list->word->word, "_bgclassCall")==0) {
-        int ret = _bgclassCall(list->next);
-        bgtracePop();
-        bgtrace0(1,"### ENDING 1 bgCore_builtin()\n");
-        return ret;
-    }
-
-    // bgCore _classUpdateVMT [-f|--force] <className>
-    if (strcmp(list->word->word, "_classUpdateVMT")==0) {
-        list=list->next; if (!list) return (EX_USAGE);
-        int forceFlag=0;
-        if (strcmp(list->word->word,"-f")==0 || strcmp(list->word->word,"--force")==0) {
-            list=list->next; if (!list) return (EX_USAGE);
-            forceFlag=1;
-        }
-//        begin_unwind_frame("bgCore");
-        int result = _classUpdateVMT(list->word->word, forceFlag);
-//        discard_unwind_frame("bgCore");
-        bgtracePop();
-        bgtrace0(1,"### ENDING 2 bgCore_builtin()\n");
-        return result;
-    }
-
-    // bgCore Object_fromJSON
-    if (strcmp(list->word->word, "Object_fromJSON")==0) {
-        int ret = Object_fromJSON(list->next);
-        bgtracePop();
-        bgtrace0(1,"### ENDING 3 bgCore_builtin()\n");
-        return ret;
-    }
-
-
-    // bgCore ConstructObject
-    if (strcmp(list->word->word, "ConstructObject")==0) {
-        ConstructObject(list->next);
-        bgtracePop();
-        bgtrace0(1,"### ENDING 3.5 bgCore_builtin()\n");
-        return EXECUTION_SUCCESS;
-    }
-
-
-
-    // bgCore ConstructObjectFromJson
-    if (strcmp(list->word->word, "ConstructObjectFromJson")==0) {
-        int ret = ConstructObjectFromJson(list->next);
-        bgtracePop();
-        bgtrace0(1,"### ENDING 4 bgCore_builtin()\n");
-        return ret;
-    }
-
-    // bgCore import <scriptName>
-    if (strcmp(list->word->word, "import")==0) {
-        list = list->next;
-        char* param = (list) ? list->word->word : NULL;
-        int importFlags = 0;
-        char* retVar = NULL;
-        while (param && *param == '-') {
-            param = (*(param+1)=='-') ? param+2 : param+1;
-            switch (*param) {
-              case 'd': importFlags |= im_devOnlyFlag    ; break;
-              case 'f': importFlags |= im_forceFlag      ; break;
-              case 'e': importFlags |= im_stopOnErrorFlag; break;
-              case 'q': importFlags |= im_quietFlag      ; break;
-              case 'g': importFlags |= im_getPathFlag;
-                        retVar = bgOptionGetOpt(&list);
-                        break;
-            }
-            list = list->next;
-            param = (list) ? list->word->word : NULL;
-        }
-        if (!list)
-            return setErrorMsg("<scriptname> is a required argument to import\n");
-
-        char* scriptPath = NULL;
-        int ret = importBashLibrary(list->word->word, importFlags, &scriptPath);
-        if (importFlags&im_getPathFlag)
-            ShellVar_setS(retVar, scriptPath);
-        if (scriptPath) xfree(scriptPath);
-
-        bgtracePop();
-        bgtrace0(1,"### ENDING 4 bgCore_builtin()\n");
-        return ret;
-    }
 
     fprintf(stderr, "error: command not recognized cmd='%s'\n", (list && list->word)?list->word->word:"");
-    bgtracePop();
-    bgtrace0(1,"### ENDING 6 bgCore_builtin()\n");
+    bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
     return (EX_USAGE);
 }
 
@@ -278,13 +251,14 @@ int bgCore_builtin(WORD_LIST* list)
 int bgCore_builtin_load (char* name)
 {
     bgtraceOn();
-    _bgtrace(0,"LOAD ############################################################################################\n");
+    _bgtrace(1,"LOAD ############################################################################################\n");
     return (1);
 }
 
 /* Called when `bgCore' is disabled. */
 void bgCore_builtin_unload (char* name)
 {
+    onUnload_objects();
 }
 
 char *_bgclassCall_doc[] = {
@@ -300,5 +274,83 @@ struct builtin bgCore_struct = {
 	BUILTIN_ENABLED,		/* initial flags for builtin */
 	_bgclassCall_doc,			/* array of long documentation strings. */
 	"bgCore <oid> <className> <hierarchyLevel> '|' <objectSyntaxToExecute>",			/* usage synopsis; becomes short_doc */
+	0				/* reserved for internal use */
+};
+
+
+
+
+
+
+// ###############################################################################################################################
+
+int import_builtin(WORD_LIST* args)
+{
+    char* label = ""; if (!label);
+    bgtrace1(1,"### STR import_builtin(%s)\n", label=WordList_toString(args)); bgtracePush();
+
+    char* param = (args) ? args->word->word : NULL;
+    int importFlags = 0;
+    while (param && *param == '-') {
+        param = (*(param+1)=='-') ? param+2 : param+1;
+        switch (*param) {
+          case 'd': importFlags |= im_devOnlyFlag    ; break;
+          case 'f': importFlags |= im_forceFlag      ; break;
+          case 'e': importFlags |= im_stopOnErrorFlag; break;
+          case 'q': importFlags |= im_quietFlag      ; break;
+          case 'g': importFlags |= im_getPathFlag    ; break;
+        }
+        args = args->next;
+        param = (args) ? args->word->word : NULL;
+    }
+    if (!args)
+        return assertError(NULL,"<scriptname> is a required argument to import\n");
+    char* scriptName = args->word->word;
+    args = args->next;
+
+    char* scriptPath = NULL;
+
+    int ret = importBashLibrary(scriptName, importFlags, &scriptPath);
+
+    if (importFlags&im_getPathFlag) {
+        if (args)
+            ShellVar_setS(args->word->word, scriptPath);
+        else
+            printf("%s\n",scriptPath);
+    }
+    if (scriptPath) xfree(scriptPath);
+
+     bgtracePop(); bgtrace1(2,"### END import_builtin(%s)\n", label);
+    return ret;
+}
+
+
+/* Called when `bgCore' is enabled and loaded from the shared object.  If this
+   function returns 0, the load fails. */
+int import_builtin_load (char* name)
+{
+    return (1);
+}
+
+/* Called when `import' is disabled. */
+void import_builtin_unload (char* name)
+{
+    onUnload_objects();
+}
+
+char *import_doc[] = {
+	"Source a bash library with idempotency.",
+	"",
+	"import can be used instead of 'source' to include a bash script library with idempotency which means it works correctly if"
+    "there are complicated dependency relationships between library scripts and scripts that use them",
+	(char *)NULL
+};
+
+struct builtin import_struct = {
+	"import",			/* builtin name */
+	import_builtin,		/* function implementing the builtin */
+	BUILTIN_ENABLED,		/* initial flags for builtin */
+	import_doc,			/* array of long documentation strings. */
+	"import <scriptName> ;$L1;$L2",			/* usage synopsis; becomes short_doc */
 	0				/* reserved for internal use */
 };
