@@ -158,3 +158,30 @@ int fsExists(const char* file) {
     struct stat buf;
     return (stat(file, &buf) == 0);
 }
+
+char* saprintf(char* fmt, ...)
+{
+    if (!fmt || !(*fmt))
+        return savestring("");
+
+    // we make an initial guess for the allocSize. If its too small, vsnprintf will tell us so we can then allocate the exact size.
+    // if our initial guess is too large, we waste some memory but we avoid having to call vsnprintf twice.
+
+    size_t allocSize = 2 * strlen(fmt);
+    char* buf = xmalloc(allocSize);
+
+    va_list args;
+    SH_VA_START(args, fmt);
+    va_list args2;
+    va_copy(args2,args);
+
+    int actualSize = vsnprintf( buf, allocSize, fmt, args);
+    if (actualSize >= allocSize) {
+        allocSize = actualSize + 1;
+        buf = xrealloc(buf, allocSize);
+        actualSize = vsnprintf( buf, allocSize, fmt, args2);
+        if (actualSize >= allocSize)
+            assertError(NULL, "logic error. allocSize should have been large enough but something went wrong.\n");
+    }
+    return buf;
+}

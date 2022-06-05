@@ -7,6 +7,7 @@
 #endif
 
 #include <stdarg.h>
+#include<setjmp.h>
 
 // this replaces loadables.h
 #include <builtins.h>
@@ -43,6 +44,16 @@ extern int source_builtin (WORD_LIST *);
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Error handling
 
+// the top level builtin function needs to setjmp(assertErrorJmpPoint) like...
+// if ((exitCode = setjmp(assertErrorJmpPoint))) {
+//    // true condition is returning from the longjmp inside assertError()
+//    return exitCode;
+// } else {
+//    // false condition is the normal builtin code
+//    ...
+// }
+extern jmp_buf assertErrorJmpPoint;
+
 extern int assertError(WORD_LIST* opts, char* fmt, ...);
 
 
@@ -58,20 +69,25 @@ extern int assertError(WORD_LIST* opts, char* fmt, ...);
 //    <function>Global : ignore local vars by this name and operate only on global vars
 //    <function>createSet : this is short for create and set as opposed to creating an uninitialized var
 
+// var context/scope functions
 #define ShellAtGlobalScope()                     (shell_variables==global_variables)
 #define ShellPushFunctionScope(name)             push_var_context(name, VC_FUNCENV, temporary_env)
 #define ShellPopFunctionScope()                  pop_var_context()
 
+// shell function functions
 #define ShellFunc_find(funcname)                 find_function(funcname)
 extern SHELL_VAR* ShellFunc_findWithSuffix(char* funcname, char* suffix);
 extern int ShellFunc_executeS(WORD_LIST* args);
 extern int ShellFunc_execute(SHELL_VAR* func, WORD_LIST* args);
 
 
+// plain var functions
 extern SHELL_VAR* ShellVar_find(char* varname);
+extern SHELL_VAR* ShellVar_findUpVar(char* varname);
+#define ShellVar_findLocal(varname)             hash_lookup(varname, shell_variables);
 #define ShellVar_findGlobal(varname)            find_global_variable(varname)
 extern SHELL_VAR* ShellVar_findWithSuffix(char* varname, char* suffix);
-// create will return an existing variable or create a new one
+// create will return an existing variable or create a new local or global var depending on if there is a function context or not
 extern SHELL_VAR* ShellVar_create(char* varname);
 #define ShellVar_createGlobal(varname)          bind_global_variable(varname, NULL, ASS_FORCE)
 #define ShellVar_createGlobalSet(varname,value) bind_global_variable(varname, value, ASS_FORCE)
@@ -79,9 +95,11 @@ extern SHELL_VAR* ShellVar_create(char* varname);
 #define ShellVar_unset(var)                     unbind_variable(var->name)
 #define ShellVar_unsetS(varname)                unbind_variable(varname)
 #define ShellVar_get(var)                       get_variable_value(var)
+#define ShellVar_getS(varname)                  get_variable_value(ShellVar_find(varname))
 #define ShellVar_set(var,value)                 bind_variable_value(var,value,0)
 extern void ShellVar_setS(char* varname, char* value);
 
+// nameref var functions
 // note that ShellVar_find will return the non-ref SHELL_VAR refered to by varname. ShellVar_refFind allows us to manipulate the ref
 #define ShellVar_refFind(varname)              find_variable_noref(varname)
 // create will return an existing variable or create a new one
@@ -91,41 +109,51 @@ extern SHELL_VAR* ShellVar_refCreateSet(char* varname, char* value);
 #define ShellVar_refUnset(var)                 unbind_variable_noref(var->name)
 
 
+// array var functions
 // create will return an existing variable or create a new one
 extern SHELL_VAR* ShellVar_arrayCreate(char* varname);
 #define ShellVar_arrayCreateGlobal(varname)    make_new_array_variable(varname)
 #define ShellVar_arrayUnset(var)               unbind_variable(var->name)
 #define ShellVar_arrayUnsetI(var, index)       array_dispose_element(array_remove(array_cell(var), index))
-#define ShellVar_arrayUnsetS(var, indexStr)    array_dispose_element(array_remove(array_cell(var), array_expand_index(var, indexStr, strlen(indexStr), 0)))
+#define ShellVar_arrayUnsetS(varname, indexStr) array_dispose_element(array_remove(array_cell(varname), array_expand_index(varname, indexStr, strlen(indexStr), 0)))
 #define ShellVar_arrayGetI(var,indexInt)       array_reference(array_cell(var), indexInt)
 #define ShellVar_arrayGetS(var,indexStr)       array_reference(array_cell(var), array_expand_index(var, indexStr, strlen(indexStr), 0))
 #define ShellVar_arraySetI(var,indexInt,value) bind_array_element(var, indexInt, value, 0)
 #define ShellVar_arraySetS(var,indexStr,value) bind_array_element(var, ShellVar_arrayStrToIndex(var,indexStr), value, 0)
+#define ShellVar_arrayPush(var,value)          bind_array_element(var, 1+array_max_index(array_cell(var)), value, 0)
 #define ShellVar_arrayAppend(var,value)        bind_array_element(var, 1+array_max_index(array_cell(var)), value, 0)
 #define ShellVar_arrayCopy(dst,src)            do { array_dispose(array_cell(dst)); var_setarray(dst, array_copy(array_cell(src))); } while(0)
 #define ShellVar_arrayClear(var)               array_flush(array_cell(var))
 #define ShellVar_arrayStrToIndex(var,indexStr) ((isNumber(indexStr)) ? atoi(indexStr) : 1+array_max_index(array_cell(var)))
-
 // this does not use array_to_word_list() because the WORD_LIST used in arrays dont use the same allocation as in the rest
 extern WORD_LIST* ShellVar_arrayToWordList(SHELL_VAR* var);
+// array iteration macros...
+#define ShellVar_arrayStart(var)   (array_cell(var))->head->next
+#define ShellVar_arrayEnd(var)     (array_cell(var))->head->prev
+#define ShellVar_arrayEOL(var)     (array_cell(var))->head
+// for (ARRAY_ELEMENT* el = ShellVar_arrayStart(var); el!=ShellVar_arrayEOL(var); el=el->next ) {
+//     bgtrace2(0,"index='%d'  value='%s'\n", el->ind, el->value);
 
+// assoc var functions
 // create will return an existing variable or create a new one
 extern SHELL_VAR* ShellVar_assocCreate(char* varname);
 #define ShellVar_assocCreateGlobal(varname)    make_new_assoc_variable(varname)
 #define ShellVar_assocUnset(var)               unbind_variable(var->name)
 #define ShellVar_assocUnsetEl(var)             assoc_remove(assoc_cell(var->name))
 #define ShellVar_assocGet(var,indexStr)        assoc_reference(assoc_cell(var), indexStr)
-#define ShellVar_assocSet(var,indexStr,value)  assoc_insert(assoc_cell(var), savestring(indexStr), value)
+#define ShellVar_assocSet(var,indexStr,value)  do { VUNSETATTR(var, att_invisible);  assoc_insert(assoc_cell(var), savestring(indexStr), value); } while(0)
 #define ShellVar_assocSize(var)                assoc_num_elements(assoc_cell(var))
-
+#define ShellVar_assocClear(var)               assoc_flush(assoc_cell(var))
 extern void ShellVar_assocCopyElements(HASH_TABLE* dest, HASH_TABLE* source);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // WordList
 // native WORD_LIST functions are mostly in make_cmd.h
 
-#define WordList_toString(list)   string_list(list)
+#define WordList_unshift(list, word)  make_word_list(make_word(word), list)
+#define WordList_toString(list)       string_list(list)
 #define WordList_fromString(contents, seperators, quotedFlag)    list_string(contents, seperators, quotedFlag)
+#define WordList_reverse(list)        REVERSE_LIST(list, WORD_LIST*)
 #define IFS " \t\n\0"
 
 extern WORD_LIST* WordList_copy(WORD_LIST* src);
@@ -144,6 +172,35 @@ typedef struct {
 
 extern BUCKET_CONTENTS* AssocItr_init(AssocItr* pI, HASH_TABLE* pTbl);
 extern BUCKET_CONTENTS* AssocItr_next(AssocItr* pI);
+extern BUCKET_CONTENTS* AssocItr_peek(AssocItr* pI);
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ArrayItr (there is no ArrayItr -- use this pattern)
+// for (ARRAY_ELEMENT* el = ShellVar_arrayStart(var); el!=ShellVar_arrayEOL(var); el=el->next ) {
+//     bgtrace2(0,"index='%d'  value='%s'\n", el->ind, el->value);
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// BGRetVar
+//    This supports a function that returns it result in a flexible way. See man(3) bgOptions_DoOutputVarOpts
+
+typedef enum {rt_simple, rt_array, rt_set, rt_echo} BGRetType;
+
+typedef struct {
+    SHELL_VAR* var;
+    BGRetType type;
+    int appendFlag;
+    char* delim;
+} BGRetVar;
+
+extern void      BGRetVar_init(BGRetVar* retVar);
+extern BGRetVar* BGRetVar_new();
+extern BGRetVar* BGRetVar_initFromOpts(BGRetVar* retVar, WORD_LIST** pArgs);
+extern void      outputValue(BGRetVar* retVar, char* value);
+extern void      outputValues(BGRetVar* retVar, WORD_LIST* values);
+
+extern char* BGCheckOpt(char* spec, WORD_LIST** pArgs);
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

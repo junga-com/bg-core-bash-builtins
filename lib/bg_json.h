@@ -81,6 +81,7 @@ extern JSONToken* JSONScanner_getValue(JSONScanner* this);
 
 extern int ConstructObjectFromJson(WORD_LIST* list);
 extern int Object_fromJSON(WORD_LIST* args);
+extern int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel);
 
 
 #endif // _bg_json_H_

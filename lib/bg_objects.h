@@ -45,7 +45,7 @@ extern int BashObjRef_init(BashObjRef* pRef, char* objRefStr);
 // BashObj
 
 typedef struct _BashObj {
-  char name[255]; // maybe get rid of this in favore of vThis->name
+  char name[255]; // maybe get rid of this in favor of vThis->name
   char ref[300];
   SHELL_VAR* vThis;
   SHELL_VAR* vThisSys;
@@ -59,6 +59,12 @@ typedef struct _BashObj {
   // internal state
   HASH_TABLE* namerefMembers; // members for which we created a nameref in the method context (used to incrementally add during ctors)
 } BashObj;
+
+// This describes what set of member attributes we are interested in.
+//     tj_real : real attributes are the logical members of the object that the programmer puts in the class/object
+//     tj_sys  : sys attributes are the attributes managed and required by the object system. A developer can add more sys attributes.
+typedef enum {tj_all,tj_sys,tj_real} ToJSONMode;
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // BashClass
@@ -85,6 +91,8 @@ extern SHELL_VAR* assertClassExists(char* className, int* pErr);
 extern void BashObj_makeRef(BashObj* pObj);
 extern void BashObj_makeVMT(BashObj* pObj);
 extern int BashObj_init(BashObj* pObj, char* name, char* refClass, char* hierarchyLevel);
+extern int BashObj_initFromContext(BashObj* pObj);
+extern void BashObj_initFromObjRef(BashObj* pObj, char* objRef);
 extern BashObj* BashObj_copy(BashObj* that);
 extern BashObj* BashObj_find(char* name, char* refClass, char* hierarchyLevel);
 extern SHELL_VAR* varNewHeapVar(char* attributes);
@@ -110,6 +118,10 @@ extern int _classUpdateVMT(char* className, int forceFlag);
 extern int _bgclassCall(WORD_LIST* list);
 #define BashObj_isNull(pObj) (!pObj || strcmp(ShellVar_get(pObj->vThis),"assertThisRefError")==0)
 
+
+
+// Object Methods implemented in C
+extern WORD_LIST* Object_getIndexes(BashObj* pObj, ToJSONMode mode);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // BGObjectStack

@@ -235,6 +235,60 @@ int BashObj_init(BashObj* pObj, char* name, char* refClass, char* hierarchyLevel
     return 1;
 }
 
+// this is handy for the start of object methods implemented in C
+// its sort of like the opposite of BashObj_setupMethodCallContext
+int BashObj_initFromContext(BashObj* pObj)
+{
+    pObj->vThis = ShellVar_find("this");
+    pObj->vThisSys = ShellVar_find("_this");
+    pObj->vCLASS = ShellVar_find("class");
+    pObj->vVMT = ShellVar_find("_VMT");
+    pObj->refClass = ShellVar_getS("_CLASS");
+    pObj->superCallFlag = atol(ShellVar_getS("_hierarchLevel"));
+    strncpy(pObj->ref , ShellVar_assocGet(pObj->vThisSys, "_Ref"), sizeof(pObj->ref));
+    strncpy(pObj->name, pObj->vThis->name                        , sizeof(pObj->name));
+    pObj->namerefMembers = NULL;
+    return EXECUTION_SUCCESS;
+}
+
+void BashObj_initFromObjRef(BashObj* pObj, char* objRefStr)
+{
+    // skip over the '_bgclassCall' token
+    char* ps=objRefStr;
+    if (!ps || strncmp(ps,"_bgclassCall",12)!=0)
+        assertError(NULL,"BashObj_initFromObjRef: malformed <objRef> does not start with '_bgclassCall'\n\tobjRef='%s'\n", objRefStr);
+    ps+=12;
+    while (*ps && whitespace(*ps)) ps++;
+
+    // ps should be pointing at the start of the <oid> now
+    char* pe=ps;
+    while (*pe && !whitespace(*pe)) pe++;
+    char* oid = savestringn(ps, pe-ps);
+    while (pe && *pe && whitespace(*pe)) pe++;
+
+    // ps should be pointing at the start of <className> now
+    ps=pe;
+    while (pe && *pe && !whitespace(*pe)) pe++;
+    char* refClass = savestringn(ps, pe-ps);
+    while (pe && *pe && whitespace(*pe)) pe++;
+
+    // ps should be pointing at the start of <hierarchyLevel> now
+    ps=pe;
+    int superCallFlag=strtol(ps,&pe,10);
+    while (pe && *pe && whitespace(*pe)) pe++;
+
+    // should be pointing at the | character now.
+    ps=pe;
+    if (*ps != '|')
+        assertError(NULL,"BashObj_initFromObjRef: malformed <objRef> missing the '|' character at '%s'.\n\tobjRef='%s'\n", ps, objRefStr);
+
+    BashObj_init(pObj, oid, refClass, (superCallFlag)?"1":"0");
+
+    xfree(oid);
+    xfree(refClass);
+}
+
+
 BashObj* BashObj_copy(BashObj* that)
 {
     BashObj* this = xmalloc(sizeof(BashObj));
@@ -478,8 +532,6 @@ BashObj* ConstructObject(WORD_LIST* args)
             //ShellVar_createSet(_objRefVar, newObj->ref);
         }
     }
-
-    VUNSETATTR(newObj->vThisSys, att_invisible);
 
     strcpy(newObj->name, newObj->vThis->name);
 
@@ -1374,6 +1426,62 @@ int _bgclassCall(WORD_LIST* list)
 
     return (EXECUTION_SUCCESS);
 }
+
+
+
+WORD_LIST* Object_getIndexes(BashObj* pObj, ToJSONMode mode)
+{
+    WORD_LIST* realIdx = NULL;
+    WORD_LIST* sysIdx  = NULL;
+
+    char* tstr = ShellVar_assocGet(pObj->vCLASS, "defaultIndex");
+    int defIdxSetting = (!tstr || strcmp(tstr,"off")!=0);
+
+    if (assoc_p(pObj->vThis)) {
+        AssocItr itr; AssocItr_init(&itr, assoc_cell(pObj->vThis));
+        BUCKET_CONTENTS* bVar;
+        while ((bVar=AssocItr_next(&itr))) {
+            if (defIdxSetting && bVar->key[0]=='0' && bVar->key[1]=='\0')
+                continue;
+            if (bVar->key[0]!='_') {
+                if (mode!=tj_sys) // i.e. real or all
+                    realIdx = WordList_unshift(realIdx, bVar->key);
+            } else {
+                // i.e. sys or all
+                if (mode!=tj_real && strcmp("0",bVar->key)!=0 && strcmp("_Ref",bVar->key)!=0)
+                    sysIdx = WordList_unshift(sysIdx, bVar->key);
+            }
+        }
+    } else if (array_p(pObj->vThis) && mode!=tj_sys) {
+        for (ARRAY_ELEMENT* el = ShellVar_arrayStart(pObj->vThis); el!=ShellVar_arrayEOL(pObj->vThis); el=el->next ) {
+            char* strInd = saprintf("%d", el->ind);
+            realIdx = WordList_unshift(realIdx, strInd);
+            xfree(strInd);
+        }
+    }
+
+    // TODO: consider if we should sort the lists
+
+    if ((pObj->vThis!=pObj->vThisSys) && (mode!=tj_real)) {
+        AssocItr itr; AssocItr_init(&itr, assoc_cell(pObj->vThisSys));
+        BUCKET_CONTENTS* bVar;
+        while ((bVar=AssocItr_next(&itr)))
+            if (strcmp("0",bVar->key)!=0 && strcmp("_Ref",bVar->key)!=0)
+                sysIdx = WordList_unshift(sysIdx, bVar->key);
+    }
+
+    realIdx = WordList_reverse(realIdx);
+    sysIdx  = WordList_reverse(sysIdx);
+
+    switch (mode) {
+        case tj_real: return realIdx;
+        case tj_sys:  return sysIdx;
+        case tj_all:  return WordList_join(realIdx, sysIdx);
+    }
+    return NULL; // should never be reached -- needed to shutup compiler warning
+}
+
+
 
 void onUnload_objects()
 {

@@ -3,6 +3,7 @@
 
 #include <sys/stat.h>
 
+#include "BGString.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // JSON String escaping
@@ -591,5 +592,150 @@ int Object_fromJSON(WORD_LIST* args)
     JSONToken* endToken = JSONScanner_getObject(scanner, pObj);
     JSONScanner_free(scanner);
     JSONToken_free(endToken);
+    return EXECUTION_SUCCESS;
+}
+
+
+int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
+{
+    // this pattern allows objDictionary to be shared among this and any recursive call that it spawns
+    // even though ShellVar_assocCreate will return an existing local var, it wont use one at a higher scope so we use ShellVar_find first
+    SHELL_VAR* objDictionary = ShellVar_find("objDictionary");
+    if (!objDictionary)
+        objDictionary = ShellVar_assocCreate("objDictionary");
+
+
+    // record that this object is being written to the json txt
+    //objDictionary[${_this[_OID]}]="sessionOID_${#objDictionary[@]}"
+    char* strCount = itos( ShellVar_assocSize(objDictionary) );
+    char* sessionOID = save2string("sessionOID_", strCount);
+    ShellVar_assocSet(objDictionary, this->vThis->name, sessionOID);
+    xfree(strCount);
+
+    char* tstr = ShellVar_assocGet(this->vCLASS, "defaultIndex");
+    int defIdxSetting = (!tstr || strcmp(tstr,"off")!=0);
+
+    char tOpen='{', tClose='}';
+    //int labelsOn = 1;
+    if (array_p(this->vThis)) {
+        tOpen='['; tClose=']';
+        //labelsOn = 0;
+    }
+
+    // start the object/array
+    printf("%c", tOpen);
+    indentLevel++;
+
+    int attribCount = 0;
+    if (assoc_p(this->vThis)) {
+        AssocItr itr; AssocItr_init(&itr, assoc_cell(this->vThis));
+        BUCKET_CONTENTS* bVar;
+        while ((bVar=AssocItr_next(&itr))) {
+            if (bVar->key[0]=='_' || (defIdxSetting && bVar->key[0]=='0' && bVar->key[1]=='\0'))
+                continue;
+
+            // print a newline to 'finish' the last attribute (or tOpen)
+            // we do it this way so that we can write the ',' only if required
+            printf("%s\n", (attribCount++ == 0)?"":",");
+
+            // print the start of the line, up to the <value>
+            printf("%*s", indentLevel*3, "");
+            printf("\"%s\": ", bVar->key);
+
+            char* value = (char*)bVar->data;
+            if ( strncmp(value,"_bgclassCall",12)==0 ) {
+                BashObj subObj; BashObj_initFromObjRef(&subObj,value);
+                char* seenSessionID = ShellVar_assocGet(objDictionary, subObj.vThis->name);
+                if (! seenSessionID)
+                    Object_toJSON(&subObj, mode, indentLevel);
+                else {
+                    BGString newRef; BGString_init(&newRef, 100);
+                    BGString_copy(&newRef,"_bgclassCall");
+                    BGString_append(&newRef, seenSessionID, " ");
+                    BGString_append(&newRef, subObj.refClass, " ");
+                    BGString_append(&newRef, (subObj.superCallFlag)?"1":"0", " ");
+                    BGString_append(&newRef, " | ", "");
+                    printf("\"%s\"", newRef.buf);
+                    BGString_free(&newRef);
+                }
+            } else {
+                printf("\"%s\"", value);
+            }
+        }
+
+        // now do the system attributes if called for
+        AssocItr_init(&itr, assoc_cell(this->vThisSys));
+        if (mode!=tj_real) while ((bVar=AssocItr_next(&itr))) {
+            if (bVar->key[0]!='_' || strcmp(bVar->key,"_Ref")==0 )
+                continue;
+
+            // print a newline to 'finish' the last attribute (or tOpen)
+            // we do it this way so that we can write the ',' only if required
+            printf("%s\n", (attribCount++ == 0)?"":",");
+
+            // print the start of the line, up to the <value>
+            printf("%*s", indentLevel*3, "");
+            printf("\"%s\": ", bVar->key);
+
+            char* value = (char*)bVar->data;
+            if ( strncmp(value,"_bgclassCall",12)==0 ) {
+                BashObj subObj; BashObj_initFromObjRef(&subObj,value);
+                char* seenSessionID = ShellVar_assocGet(objDictionary, subObj.vThis->name);
+                if (! seenSessionID)
+                    Object_toJSON(&subObj, mode, indentLevel);
+                else {
+                    BGString newRef; BGString_init(&newRef, 100);
+                    BGString_copy(&newRef,"_bgclassCall");
+                    BGString_append(&newRef, seenSessionID, " ");
+                    BGString_append(&newRef, subObj.refClass, " ");
+                    BGString_append(&newRef, (subObj.superCallFlag)?"1":"0", " ");
+                    BGString_append(&newRef, " | ", "");
+                    printf("\"%s\"", newRef.buf);
+                    BGString_free(&newRef);
+                }
+            } else if (strcmp(bVar->key,"_OID")==0) {
+                printf("\"%s\"", sessionOID);
+            } else {
+                printf("\"%s\"", value);
+            }
+        }
+
+    } else if (array_p(this->vThis)) {
+        for (ARRAY_ELEMENT* el=ShellVar_arrayStart(this->vThis); el!=ShellVar_arrayEOL(this->vThis); el=el->next) {
+
+            // print a newline to 'finish' the last attribute (or tOpen)
+            // we do it this way so that we can write the ',' only if required
+            printf("%s\n", (attribCount++ == 0)?"":",");
+
+            // print the start of the line, up to the <value>
+            printf("%*s", indentLevel*3, "");
+
+            if ( strncmp(el->value,"_bgclassCall",12)==0 ) {
+                BashObj subObj; BashObj_initFromObjRef(&subObj,el->value);
+                char* seenSessionID = ShellVar_assocGet(objDictionary, subObj.vThis->name);
+                if (! seenSessionID)
+                    Object_toJSON(&subObj, mode, indentLevel);
+                else {
+                    BGString newRef; BGString_init(&newRef, 100);
+                    BGString_copy(&newRef,"_bgclassCall");
+                    BGString_append(&newRef, seenSessionID, " ");
+                    BGString_append(&newRef, subObj.refClass, " ");
+                    BGString_append(&newRef, (subObj.superCallFlag)?"1":"0", " ");
+                    BGString_append(&newRef, " | ", "");
+                    printf("\"%s\"", newRef.buf);
+                    BGString_free(&newRef);
+                }
+            } else {
+                printf("\"%s\"", el->value);
+            }
+        }
+    }
+
+    indentLevel--;
+    if (attribCount>0)
+        printf("\n%*s", indentLevel*3,"");
+    printf("%c", tClose);
+
+    xfree(sessionOID);
     return EXECUTION_SUCCESS;
 }

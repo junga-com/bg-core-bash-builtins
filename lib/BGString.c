@@ -74,12 +74,14 @@ void BGString_appendfv(BGString* pStr, char* separator, char* fmt, va_list args)
         pStr->len+=separatorLen;
     }
 
+    va_list args2;
+    va_copy(args2,args);
     int spaceLeft = (pStr->allocatedLen-pStr->len);
     int sLen = vsnprintf( (pStr->buf+pStr->len), spaceLeft, fmt, args);
     if (sLen >= spaceLeft) {
         BGString_grow(pStr, pStr->len + sLen + 1);
         spaceLeft = (pStr->allocatedLen-pStr->len);
-        sLen = vsnprintf( (pStr->buf+pStr->len), spaceLeft, fmt, args);
+        sLen = vsnprintf( (pStr->buf+pStr->len), spaceLeft, fmt, args2);
     }
     pStr->len += sLen;
 }

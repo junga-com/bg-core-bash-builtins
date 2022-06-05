@@ -17,5 +17,7 @@ extern int matchFilter(char* filter, char* value);
 extern void hexDump(char *desc, void *addr, int len);
 extern int fsExists(const char* file);
 
+// 'sa' stands for allocated string. caller should xfree() the returned string when finished with it.
+extern char* saprintf(char* fmt, ...);
 
 #endif /* _bg_misc_H_ */
