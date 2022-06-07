@@ -14,7 +14,7 @@ char* jsonEscape(char* s)
 {
     char* sOut=xmalloc(strlen(s)*2+2);
     char* cOut=sOut;
-    for (char* c=s; c && *c;) {
+    for (char* c=s; c && *c; c++) {
         switch (*c) {
             case '\\':
             case '"':
@@ -29,6 +29,7 @@ char* jsonEscape(char* s)
         }
         *cOut++=*c;
     }
+    *cOut++='\0';
     return sOut;
 }
 
@@ -117,8 +118,9 @@ void JSONToken_print(FILE* fd, JSONToken* this, char* label)
 
 char* JSONToken_ToString(JSONToken* this)
 {
-    static char buf[100];
-    snprintf(buf,100, "%s(%s)", JSONTypeToString(this->type), JSONType_isBashObj(this->type)?"<objOrArray>":this->value);
+    static char buf[300];
+    snprintf(buf,300, "%s(%s)", JSONTypeToString(this->type), JSONType_isBashObj(this->type)?"<objOrArray>":this->value);
+    buf[300-1]='\0';
     return buf;
 }
 
@@ -354,9 +356,11 @@ JSONToken* JSONScanner_getToken(JSONScanner* this)
     return NULL;
 }
 
+static int depth = 0;
 
 JSONToken* JSONScanner_getObject(JSONScanner* this, BashObj* pObj)
 {
+    depth++;
     JSONToken* token;
     while ((token = JSONScanner_getToken(this)) && !JSONToken_isDone(token) && token->type!=jt_objEnd) {
         // The first iteration should not have a comma but we will not call it an error it it does
@@ -367,20 +371,27 @@ JSONToken* JSONScanner_getObject(JSONScanner* this, BashObj* pObj)
         }
 
         // token should now be the name of an attribute.
-        if (token->type != jt_string)
+        if (token->type != jt_string) {
+            depth--;
             return JSONToken_makeError(this, token, "Expected a string");
+        }
         JSONToken* name = token;
+        bgtrace3(1,"%*s |name='%s'\n", depth*3,"",  JSONToken_ToString(token));
 
         // the : separator
         token = JSONScanner_getToken(this);
-        if (token->type != jt_colon)
+        if (token->type != jt_colon) {
+            depth--;
             return JSONToken_makeError(this, token, "Expected a colon");
+        }
         JSONToken_free(token);
 
         // the value of the attribute
         JSONToken* value = JSONScanner_getValue(this);
-        if (!JSONType_isAValue(value->type))
+        if (!JSONType_isAValue(value->type)) {
+            depth--;
             return JSONToken_makeError(this,value, "Unexpected token");
+        }
 
         // check for some special bash object system variables for special processing
         if (strcmp(name->value,"_OID")==0) {
@@ -403,6 +414,9 @@ JSONToken* JSONScanner_getObject(JSONScanner* this, BashObj* pObj)
         JSONToken_free(name);
         JSONToken_free(value);
     }
+    if (token->type==jt_error)
+        assertError(NULL, "Object_fromJSON parse error '%s'", token->value);
+    depth--;
     return token;
 }
 
@@ -410,7 +424,6 @@ JSONToken* JSONScanner_getObject(JSONScanner* this, BashObj* pObj)
 
 JSONToken* JSONScanner_getValue(JSONScanner* this)
 {
-    static int depth = 0;
     depth++;
     JSONToken* jval;
 
@@ -420,50 +433,59 @@ JSONToken* JSONScanner_getValue(JSONScanner* this)
         JSONToken_free(token);
         BashObj* pObj = BashObj_makeNewObject("Object",NULL);
         jval = JSONToken_makeObject(pObj);
-        while ((token = JSONScanner_getToken(this)) && !JSONToken_isDone(token) && token->type!=jt_objEnd) {
-            if (token->type == jt_comma) {
-                JSONToken_free(token);
-                token = JSONScanner_getToken(this);
-            }
-            if (token->type != jt_string) {
-                depth--;
-                return JSONToken_makeError(this, token, "Expected a string");
-            }
-            JSONToken* name = token;
-            bgtrace3(1,"%*s |name='%s'\n", depth*3,"",  JSONToken_ToString(token));
-
-            token = JSONScanner_getToken(this);
-            if (token->type != jt_colon) {
-                depth--;
-                return JSONToken_makeError(this, token, "Expected a colon");
-            }
-            JSONToken_free(token);
-
-            JSONToken* value = JSONScanner_getValue(this);
-            if (!JSONType_isAValue(value->type)) {
-                depth--;
-                return JSONToken_makeError(this,value, "Unexpected token");
-            }
-
-            if (strcmp(name->value,"_OID")==0) {
-                // // use _OID to update the objDictionary so that we can fixup relative objRefs
-                // char* sessionOID = value;
-                // objDictionary[sessionOID]=currentStack->pObj->name;
-                // objDictionary[currentStack->pObj->name]=sessionOID;
-
-            } else if (strcmp(name->value,"_Ref")==0 || strcmp(name->value,"0")==0) {
-                // ignore _Ref and "0" on restore
-
-            } else if (strcmp(name->value,"_CLASS")==0) {
-                BashObj_setClass(pObj, value->value);
-
-            } else {
-                BashObj_setMemberValue(pObj, name->value, (JSONType_isBashObj(value->type)) ? (((BashObj*)value->value)->ref) : value->value );
-            }
-
-            JSONToken_free(name);
-            JSONToken_free(value);
-        }
+        JSONScanner_getObject(this, pObj);
+        // while ((token = JSONScanner_getToken(this)) && !JSONToken_isDone(token) && token->type!=jt_objEnd) {
+        //     // The first iteration should not have a comma but we will not call it an error it it does
+        //     // also be tolerant to the caller not removing the jt_objStart token.
+        //     if (token->type == jt_comma) {
+        //         JSONToken_free(token);
+        //         token = JSONScanner_getToken(this);
+        //     }
+        //
+        //     // token should now be the name of an attribute.
+        //     if (token->type != jt_string) {
+        //         depth--;
+        //         return JSONToken_makeError(this, token, "Expected a string");
+        //     }
+        //     JSONToken* name = token;
+        //     bgtrace3(1,"%*s |name='%s'\n", depth*3,"",  JSONToken_ToString(token));
+        //
+        //     // the : separator
+        //     token = JSONScanner_getToken(this);
+        //     if (token->type != jt_colon) {
+        //         depth--;
+        //         return JSONToken_makeError(this, token, "Expected a colon");
+        //     }
+        //     JSONToken_free(token);
+        //
+        //     // the value of the attribute
+        //     JSONToken* value = JSONScanner_getValue(this);
+        //     if (!JSONType_isAValue(value->type)) {
+        //         depth--;
+        //         return JSONToken_makeError(this,value, "Unexpected token");
+        //     }
+        //
+        //     // check for some special bash object system variables for special processing
+        //     if (strcmp(name->value,"_OID")==0) {
+        //         // // use _OID to update the objDictionary so that we can fixup relative objRefs
+        //         // char* sessionOID = value;
+        //         // objDictionary[sessionOID]=currentStack->pObj->name;
+        //         // objDictionary[currentStack->pObj->name]=sessionOID;
+        //
+        //     } else if (strcmp(name->value,"_Ref")==0 || strcmp(name->value,"0")==0) {
+        //         // ignore _Ref and "0" on restore
+        //
+        //     } else if (strcmp(name->value,"_CLASS")==0) {
+        //         // oh right, you are supposed to be this kind of object
+        //         BashObj_setClass(pObj, value->value);
+        //
+        //     } else {
+        //         BashObj_setMemberValue(pObj, name->value, (JSONType_isBashObj(value->type)) ? (((BashObj*)value->value)->ref) : value->value );
+        //     }
+        //
+        //     JSONToken_free(name);
+        //     JSONToken_free(value);
+        // }
 
     } else if (token->type==jt_arrayStart) {
         BashObj* pObj = BashObj_makeNewObject("Array", NULL);
@@ -636,7 +658,7 @@ int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
 
             // print a newline to 'finish' the last attribute (or tOpen)
             // we do it this way so that we can write the ',' only if required
-            printf("%s\n", (attribCount++ == 0)?"":",");
+            printf("%s\n", ((attribCount++ == 0) ? "" : ","));
 
             // print the start of the line, up to the <value>
             printf("%*s", indentLevel*3, "");
@@ -659,7 +681,9 @@ int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
                     BGString_free(&newRef);
                 }
             } else {
-                printf("\"%s\"", value);
+                char* escapedValue = jsonEscape(value);
+                printf("\"%s\"", escapedValue);
+                xfree(escapedValue);
             }
         }
 

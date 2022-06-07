@@ -93,6 +93,7 @@ extern void BashObj_makeVMT(BashObj* pObj);
 extern int BashObj_init(BashObj* pObj, char* name, char* refClass, char* hierarchyLevel);
 extern int BashObj_initFromContext(BashObj* pObj);
 extern void BashObj_initFromObjRef(BashObj* pObj, char* objRef);
+extern void BashObj_setupMethodCallContextDone(BashObj* this);
 extern BashObj* BashObj_copy(BashObj* that);
 extern BashObj* BashObj_find(char* name, char* refClass, char* hierarchyLevel);
 extern SHELL_VAR* varNewHeapVar(char* attributes);

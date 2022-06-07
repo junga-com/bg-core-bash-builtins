@@ -288,6 +288,13 @@ void BashObj_initFromObjRef(BashObj* pObj, char* objRefStr)
     xfree(refClass);
 }
 
+void BashObj_setupMethodCallContextDone(BashObj* this)
+{
+__bgtrace("!!! %p : FREEING namerefMembers in BashObj_setupMethodCallContextDone\n", this->namerefMembers);
+    xfree(this->namerefMembers);
+    this->namerefMembers = NULL;
+}
+
 
 BashObj* BashObj_copy(BashObj* that)
 {
@@ -452,8 +459,8 @@ BashObj* ConstructObject(WORD_LIST* args)
     SHELL_VAR* vObjVar = ShellVar_find(_objRefVar);
 
     BashObj* newObj = xmalloc(sizeof(BashObj));
-    *newObj->name='\n';
-    *newObj->ref='\n';
+    *newObj->name='\0';
+    *newObj->ref='\0';
     newObj->vCLASS = vClass;
     newObj->refClass=NULL;
     newObj->superCallFlag=0;
@@ -614,6 +621,8 @@ BashObj* ConstructObject(WORD_LIST* args)
         bgtrace2(2,"!!!### popping var ctx for 'ConstructObject %s %s'\n\n",_CLASS, _objRefVar);
     }
 
+__bgtrace("!!! %p : FREEING namerefMembers in ConstructObject\n", newObj->namerefMembers);
+    BashObj_setupMethodCallContextDone(newObj);
     dispose_words(hierarchyList);
 
     bgtracePop();
@@ -768,8 +777,10 @@ int BashObj_setupMethodCallContext(BashObj* pObj, BashObjectSetupMode mode, char
     }
     if (mode == sm_membersOnly || mode == sm_wholeShebang) {
         if (assoc_p(pObj->vThis)) {
-            if (! pObj->namerefMembers)
+            if (! pObj->namerefMembers) {
                 pObj->namerefMembers = hash_create(0);
+__bgtrace("!!! %p : making namerefMembers\n", pObj->namerefMembers);
+            }
             ObjMemberItr i;
             for (BUCKET_CONTENTS* item=ObjMemberItr_init(&i,pObj, ovt_both); item; item=ObjMemberItr_next(&i)) {
                 if (strcmp(item->key,"0")!=0 && strcmp(item->key,"_Ref")!=0 && item->data ) {
@@ -900,6 +911,8 @@ void DeclareClassEnd(char* className)
         ShellVar_refCreateSet("newClass",className);
         BashObj* pNewClass = BashObj_find(className, NULL,0);
         BashObj_setupMethodCallContext(pNewClass, sm_wholeShebang, NULL);
+__bgtrace("!!! %p : FREEING namerefMembers in DeclareClassEnd\n", pNewClass->namerefMembers);
+        BashObj_setupMethodCallContextDone(pNewClass);
         xfree(pNewClass);
         ShellVar_refUnsetS("static");
         ShellVar_refCreateSet("static", className);
@@ -1415,7 +1428,8 @@ int _bgclassCall(WORD_LIST* list)
         // setup the rest of the method environment now that we know we will be invoking a shell method.
         BashObj_setupMethodCallContext(&objInstance, sm_membersOnly, _METHOD);
     }
-
+    __bgtrace("!!! %p : FREEING namerefMembers in _bgclassCall\n", objInstance.namerefMembers);
+    BashObj_setupMethodCallContextDone(&objInstance);
 
     // cleanup before we leave
     xfree(_rsvMemberTypeStr);

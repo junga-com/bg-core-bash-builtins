@@ -8,6 +8,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "bg_bashAPI.h"
+
 FILE* _bgtraceFD=NULL;
 int bgtraceIndentLevel=0;
 
@@ -43,4 +45,15 @@ int __bgtrace(char* fmt, ...)
     vfprintf(_bgtraceFD, fmt, args);
     fflush(_bgtraceFD);
     return 1; // so that we can use bgtrace in condition
+}
+
+
+void _bgtraceStack()
+{
+    SHELL_VAR* vFuncname = ShellVar_findGlobal("FUNCNAME");
+
+    __bgtrace("Stack: ");
+    for (ARRAY_ELEMENT* el=ShellVar_arrayStart(vFuncname); el!=ShellVar_arrayEOL(vFuncname); el=el->next)
+        __bgtrace("%s ", el->value);
+    __bgtrace("\n");
 }

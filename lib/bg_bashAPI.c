@@ -34,6 +34,8 @@ int assertError(WORD_LIST* opts, char* fmt, ...)
     __bgtrace("!!! assertError in builtin: %s\n", msg.buf);
     BGString_free(&msg);
 
+    _bgtraceStack();
+
     SHELL_VAR* func = ShellFunc_find("assertError");
     execute_shell_function(func, args);
 
@@ -43,8 +45,19 @@ int assertError(WORD_LIST* opts, char* fmt, ...)
     return 36;
 }
 
+void bgWarn(char* fmt, ...)
+{
+    // format the msg and make it the last item in args (we build args backwards)
+    BGString msg;    BGString_init(&msg, 100);
+    va_list vargs;   SH_VA_START (vargs, fmt);
+    BGString_appendfv(&msg, "", fmt, vargs);
 
+    __bgtrace("!!! WARNING in builtin: %s\n", msg.buf);
+    BGString_free(&msg);
 
+    __bgtrace("\t");
+    _bgtraceStack();
+}
 
 SHELL_VAR* ShellVar_create(char* varname)
 {
@@ -396,7 +409,7 @@ char* BGCheckOpt(char* spec, WORD_LIST** pArgs)
     int slen;
     do {
         char* s = p;
-        if (*s != '-')
+        if (*s != '-' && *s != '+')
             return 0;
         char* e = s;
         while (e && *e && (strchr("=*|",*e)==NULL) ) e++;
@@ -439,15 +452,26 @@ void outputValue(BGRetVar* retVar, char* value)
     }
 
     switch (retVar->type) {
+        case rt_arrayRef:
         case rt_simple:
             if (!retVar->appendFlag)
-                ShellVar_set(retVar->var, value);
+                if (retVar->type==rt_arrayRef)
+                    ShellVar_setS(retVar->arrayRef, value);
+                else
+                    ShellVar_set(retVar->var, value);
             else {
                 char* oldval = ShellVar_get(retVar->var);
                 BGString newVal; BGString_init(&newVal,strlen(oldval)+ strlen(delim) + strlen(value) + 1 );
                 BGString_copy(&newVal, oldval);
                 BGString_append(&newVal, value, delim);
-                ShellVar_set(retVar->var, newVal.buf);
+                if (retVar->type==rt_arrayRef)
+                    ShellVar_setS(retVar->arrayRef, newVal.buf);
+                else if (array_p(retVar->var))
+                    ShellVar_arraySetI(retVar->var, 0, newVal.buf);
+                else if (assoc_p(retVar->var))
+                    ShellVar_assocSet(retVar->var, "0", newVal.buf);
+                else
+                    ShellVar_set(retVar->var, newVal.buf);
                 BGString_free(&newVal);
             }
             break;
@@ -463,35 +487,46 @@ void outputValue(BGRetVar* retVar, char* value)
             ShellVar_assocSet(retVar->var, value, "");
             break;
         case rt_echo: break;
+        case rt_noop: break;
     }
 }
 
 void outputValues(BGRetVar* retVar, WORD_LIST* values)
 {
-    char* delim = (retVar && retVar->delim) ? retVar->delim : ifs_firstchar(NULL);
+    char* ifsChar = NULL;
+    char* delim = (retVar && retVar->delim) ? retVar->delim : (ifsChar=ifs_firstchar(NULL));
 
     if (!retVar || retVar->type==rt_echo) {
         for (WORD_LIST* lp=values; lp; lp=lp->next) {
             printf("%s%s", lp->word->word, (lp->next)?delim:"");
         }
         printf("\n");
+        xfree(ifsChar);
         return;
     }
 
     char* oldval;
     switch (retVar->type) {
+        case rt_arrayRef:
         case rt_simple:
             oldval = (retVar->appendFlag) ? ShellVar_get(retVar->var) : "";
             int allocSize = 1 + strlen(oldval);
             int delimLen = strlen(delim);
             for (WORD_LIST* lp=values; lp; lp=lp->next)
-                allocSize += strlen(lp->word->word) + (lp->next)?delimLen:0;
+                allocSize += (strlen(lp->word->word) + ((lp->next)?delimLen:0));
 
             BGString newVal; BGString_init(&newVal, allocSize);
             BGString_copy(&newVal, oldval);
             for (WORD_LIST* lp=values; lp; lp=lp->next)
-                BGString_append(&newVal, lp->word->word, (lp->next)?delim:"");
-            ShellVar_set(retVar->var, newVal.buf);
+                BGString_append(&newVal, lp->word->word, delim);
+            if (retVar->type==rt_arrayRef)
+                ShellVar_setS(retVar->arrayRef, newVal.buf);
+            else if (array_p(retVar->var))
+                ShellVar_arraySetI(retVar->var, 0, newVal.buf);
+            else if (assoc_p(retVar->var))
+                ShellVar_assocSet(retVar->var, "0", newVal.buf);
+            else
+                ShellVar_set(retVar->var, newVal.buf);
             BGString_free(&newVal);
             break;
         case rt_array:
@@ -508,13 +543,16 @@ void outputValues(BGRetVar* retVar, WORD_LIST* values)
                 ShellVar_assocSet(retVar->var, lp->word->word, "");
             break;
         case rt_echo: break;
+        case rt_noop: break;
     }
+    xfree(ifsChar);
 }
 
 
 void BGRetVar_init(BGRetVar* this)
 {
     this->var = NULL;
+    this->arrayRef = NULL;
     this->type = rt_echo;
     this->appendFlag = 0;
     this->delim = NULL;
@@ -524,83 +562,102 @@ BGRetVar* BGRetVar_new()
 {
     BGRetVar* this = xmalloc(sizeof(*this));
     this->var = NULL;
+    this->arrayRef = NULL;
     this->type = rt_echo;
     this->appendFlag = 0;
     this->delim = NULL;
     return this;
 }
 
-BGRetVar* BGRetVar_initFromOpts(BGRetVar* retVar, WORD_LIST** pArgs)
+int BGRetVar_initFromOpts(BGRetVar** retVar, WORD_LIST** pArgs)
 {
-    BGRetVar retVarSpec; BGRetVar_init(&retVarSpec);
     if (! (*pArgs))
         return 0;
+
     char* optArg = NULL;
-    if        ((optArg=BGCheckOpt("-a|--append=*", pArgs))) {
-        retVarSpec.appendFlag = 1;
-    } else if ((optArg=BGCheckOpt("+a|++append=*", pArgs))) {
-        retVarSpec.appendFlag = 0;
+    int found = 0;
+
+    if        ((optArg=BGCheckOpt("-a|--append", pArgs))) {
+        if (!(*retVar)) (*retVar) = BGRetVar_new();
+        found = 1;
+        (*retVar)->appendFlag = 1;
+    } else if ((optArg=BGCheckOpt("+a|++append", pArgs))) {
+        if (!(*retVar)) (*retVar) = BGRetVar_new();
+        found = 1;
+        (*retVar)->appendFlag = 0;
 
     } else if ((optArg=BGCheckOpt("-d*|--delim=*|--retVar=*", pArgs))) {
-        retVarSpec.delim = optArg;
+        if (!(*retVar)) (*retVar) = BGRetVar_new();
+        found = 1;
+        (*retVar)->delim = optArg;
 
     } else if ((optArg=BGCheckOpt("-1|", pArgs))) {
-        retVarSpec.delim = "\n";
+        if (!(*retVar)) (*retVar) = BGRetVar_new();
+        found = 1;
+        (*retVar)->delim = "\n";
 
     } else if ((optArg=BGCheckOpt("+1|", pArgs))) {
-        retVarSpec.delim = " ";
+        if (!(*retVar)) (*retVar) = BGRetVar_new();
+        found = 1;
+        (*retVar)->delim = " ";
 
     } else if ((optArg=BGCheckOpt("-R*|--string=*|--retVar=*", pArgs))) {
-        retVarSpec.type = rt_simple;
-        retVarSpec.var = ShellVar_findUpVar(optArg);
-        if (!retVarSpec.var) {
-            __bgtrace("!WARNING!: BGRetVar_initFromOpts(): Return variable '%s' does not exist in the calling scope\n\t\nargs='%s'", optArg, WordList_toString(*pArgs));
-            retVarSpec.var = ShellVar_createGlobal(optArg);
+        if (!(*retVar)) (*retVar) = BGRetVar_new();
+        found = 1;
+        if (*optArg=='\0') {
+            (*retVar)->type = rt_noop;
+            bgWarn("BGRetVar_initFromOpts(): Return variable -R '%s' is empty. nothing will be returned\n\targs='%s'", optArg, WordList_toString(*pArgs));
+        } else if (valid_array_reference(optArg, VA_NOEXPAND)) {
+            (*retVar)->type = rt_arrayRef;
+            (*retVar)->arrayRef = optArg;
+        } else {
+            (*retVar)->type = rt_simple;
+            (*retVar)->var = ShellVar_findUpVar(optArg);
+            if (!(*retVar)->var) {
+                bgWarn("BGRetVar_initFromOpts(): Return variable -R '%s' does not exist in the calling scope\n\targs='%s'", optArg, WordList_toString(*pArgs));
+                (*retVar)->var = ShellVar_createGlobal(optArg);
+            }
         }
 
     } else if ((optArg=BGCheckOpt("-A*|--array=*|--retArray=*", pArgs))) {
-        retVarSpec.type = rt_array;
-        retVarSpec.var = ShellVar_findUpVar(optArg);
-        if (!retVarSpec.var) {
-            __bgtrace("!WARNING!: BGRetVar_initFromOpts(): Return variable '%s' does not exist in the calling scope\n\t\nargs='%s'", optArg, WordList_toString(*pArgs));
-            retVarSpec.var = ShellVar_arrayCreateGlobal(optArg);
+        if (!(*retVar)) (*retVar) = BGRetVar_new();
+        found = 1;
+        (*retVar)->type = rt_array;
+        (*retVar)->var = ShellVar_findUpVar(optArg);
+        if (*optArg=='\0') {
+            (*retVar)->type = rt_noop;
+            bgWarn("BGRetVar_initFromOpts(): Return variable -A '%s' is empty. nothing will be returned\n\targs='%s'", optArg, WordList_toString(*pArgs));
+        } else if (!(*retVar)->var) {
+            bgWarn("BGRetVar_initFromOpts(): Return variable -A '%s' does not exist in the calling scope\n\targs='%s'", optArg, WordList_toString(*pArgs));
+            (*retVar)->var = ShellVar_arrayCreateGlobal(optArg);
         }
-        if (assoc_p(retVarSpec.var))
-            assertError(NULL, "BGRetVar_initFromOpts(): Return variable '%s' is expected to be an array or a simple variable that can be converted to an array but it is an associative array which is not compatible. Use -S*|--set=* if you intend to return values in the indexes of an associative array\n",optArg);
-        else if (!array_p(retVarSpec.var))
-            convert_var_to_array(retVarSpec.var);
+        if (assoc_p((*retVar)->var))
+            assertError(NULL, "BGRetVar_initFromOpts(): Return variable -A '%s' is expected to be an array or a simple variable that can be converted to an array but it is an associative array which is not compatible. Use -S*|--set=* if you intend to return values in the indexes of an associative array\n",optArg);
+        else if (!array_p((*retVar)->var))
+            convert_var_to_array((*retVar)->var);
 
     } else if ((optArg=BGCheckOpt("-S*|--set=*", pArgs))) {
-        retVarSpec.type = rt_set;
-        retVarSpec.var = ShellVar_findUpVar(optArg);
-        if (!retVarSpec.var) {
-            __bgtrace("!WARNING!: BGRetVar_initFromOpts(): Return variable '%s' does not exist in the calling scope\n\t\nargs='%s'", optArg, WordList_toString(*pArgs));
-            retVarSpec.var = ShellVar_assocCreateGlobal(optArg);
+        if (!(*retVar)) (*retVar) = BGRetVar_new();
+        found = 1;
+        (*retVar)->type = rt_set;
+        (*retVar)->var = ShellVar_findUpVar(optArg);
+        if (*optArg=='\0') {
+            (*retVar)->type = rt_noop;
+            bgWarn("BGRetVar_initFromOpts(): Return variable -S '%s' is empty. nothing will be returned\n\targs='%s'", optArg, WordList_toString(*pArgs));
+        } else if (!(*retVar)->var) {
+            bgWarn("BGRetVar_initFromOpts(): Return variable -S '%s' does not exist in the calling scope\n\targs='%s'", optArg, WordList_toString(*pArgs));
+            (*retVar)->var = ShellVar_assocCreateGlobal(optArg);
         }
-        if (!assoc_p(retVarSpec.var))
+        if (!assoc_p((*retVar)->var))
             assertError(NULL, "BGRetVar_initFromOpts(): Return variable '%s' is expected to be an associative array (local -A)\n",optArg);
 
     } else if ((optArg=BGCheckOpt("-e|--echo", pArgs))) {
-        retVarSpec.type = rt_echo;
+        if (!(*retVar)) (*retVar) = BGRetVar_new();
+        found = 1;
+        (*retVar)->type = rt_echo;
     }
 
-    if (retVarSpec.var || (retVar && retVar->type!=retVarSpec.type) ) {
-        if (!retVar)
-            retVar = BGRetVar_new();
-        retVar->var = retVarSpec.var;
-        retVar->type = retVarSpec.type;
-    }
-    if (retVarSpec.appendFlag) {
-        if (!retVar)
-            retVar = BGRetVar_new();
-        retVar->appendFlag = retVarSpec.appendFlag;
-    }
-    if (retVarSpec.delim) {
-        if (!retVar)
-            retVar = BGRetVar_new();
-        retVar->delim = retVarSpec.delim;
-    }
-    return retVar;
+    return found;
 }
 
 

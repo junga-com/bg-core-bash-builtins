@@ -30,6 +30,7 @@
 #   define bgtrace5(level, fmt,p1,p2,p3,p4,p5) _bgtrace(level,fmt,p1,p2,p3,p4,p5)
 #   define bgtracePush() bgtraceIndentLevel++
 #   define bgtracePop()  bgtraceIndentLevel--
+#	define bgtraceStack()                       _bgtraceStack()
 #else
 #   define bgtrace0(level,fmt)
 #   define bgtrace1(level,fmt,p1)
@@ -39,12 +40,15 @@
 #   define bgtrace5(level,fmt,p1,p2,p3,p4,p5)
 #   define bgtracePush()
 #   define bgtracePop()
+#	define bgtraceStack()
 #endif
+
 
 extern FILE* _bgtraceFD;
 extern int bgtraceIndentLevel;
 extern void bgtraceOn();
 extern int _bgtrace(int level, char* fmt, ...);
 extern int __bgtrace(char* fmt, ...);
+extern void _bgtraceStack();
 
 #endif /* _bg_debug_H_ */

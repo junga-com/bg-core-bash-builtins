@@ -81,7 +81,7 @@ int bgCore_builtin(WORD_LIST* list)
         // normal setjmp path...
 
         // bgCore ping
-        if (strcmp(list->word->word, "ping")==0) {
+        if (strcmp("ping", list->word->word)==0) {
             bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
             return EXECUTION_SUCCESS;
         }
@@ -91,7 +91,7 @@ int bgCore_builtin(WORD_LIST* list)
         // ### Objects ###############################################################################################################
 
         // bgCore ConstructObject
-        if (strcmp(list->word->word, "ConstructObject")==0) {
+        if (strcmp("ConstructObject", list->word->word)==0) {
             BashObj* pObj = ConstructObject(list->next);
             xfree(pObj);
             bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
@@ -99,7 +99,7 @@ int bgCore_builtin(WORD_LIST* list)
         }
 
         // bgCore DeclareClassEnd
-        if (strcmp(list->word->word, "DeclareClassEnd")==0) {
+        if (strcmp("DeclareClassEnd", list->word->word)==0) {
             list=list->next;
             DeclareClassEnd(list->word->word);
             bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
@@ -107,14 +107,14 @@ int bgCore_builtin(WORD_LIST* list)
         }
 
         // bgCore _bgclassCall <oid> <refClass> <hierarchyLevel> |<objSyntaxStart> [<p1,2> ... <pN>]
-        if (strcmp(list->word->word, "_bgclassCall")==0) {
+        if (strcmp("_bgclassCall", list->word->word)==0) {
             ret = _bgclassCall(list->next);
             bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
             return ret;
         }
 
         // bgCore _classUpdateVMT [-f|--force] <className>
-        if (strcmp(list->word->word, "_classUpdateVMT")==0) {
+        if (strcmp("_classUpdateVMT", list->word->word)==0) {
             list=list->next; if (!list) return (EX_USAGE);
             int forceFlag=0;
             if (strcmp(list->word->word,"-f")==0 || strcmp(list->word->word,"--force")==0) {
@@ -130,20 +130,20 @@ int bgCore_builtin(WORD_LIST* list)
 
 
         // bgCore Object_getIndexes [--sys|--real|--all]
-        if (strcmp(list->word->word, "Object_getIndexes")==0 || strcmp(list->word->word, "Object::getIndexes")==0 || strcmp(list->word->word, "Object::getAttributes")==0) {
+        if (strcmp("Object_getIndexes", list->word->word)==0 || strcmp("Object::getIndexes", list->word->word)==0 || strcmp("Object::getAttributes", list->word->word)==0) {
             list = list->next;
             ToJSONMode mode = tj_real;
             BGRetVar* retVar = BGRetVar_new();
             retVar->delim = "\n";
-            while (list && *list->word->word == '-') {
+            while (list && (*list->word->word == '-' || *(list->word->word) == '+')) {
                 char* param = list->word->word;
-                if      (strcmp("--all"   , param)==0) { mode        = tj_all; }
+                if      (strcmp("--"      , param)==0) { list=list->next; break; }
+                else if (strcmp("--all"   , param)==0) { mode        = tj_all; }
                 else if (strcmp("--sys"   , param)==0) { mode        = tj_sys; }
                 else if (strcmp("--real"  , param)==0) { mode        = tj_real; }
-                else if ((retVar=BGRetVar_initFromOpts(retVar, &list)));
+                else if ((BGRetVar_initFromOpts(&retVar, &list)));
                 else                                   { return assertError(NULL, "invalid option '%s'\n", list->word->word); }
-                if (list)
-                    list = list->next;
+                list = (list) ? list->next : NULL;
             }
 
             BashObj this;
@@ -153,8 +153,7 @@ int bgCore_builtin(WORD_LIST* list)
             WORD_LIST* indexList = Object_getIndexes(&this, mode);
 
             outputValues(retVar, indexList);
-            if (retVar)
-                xfree(retVar);
+            xfree(retVar);
             bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
             return EXECUTION_SUCCESS;
         }
@@ -164,14 +163,14 @@ int bgCore_builtin(WORD_LIST* list)
         // ### JSON ##################################################################################################################
 
         // bgCore Object_fromJSON
-        if (strcmp(list->word->word, "Object_fromJSON")==0 || strcmp(list->word->word, "Object::fromJSON")==0) {
+        if (strcmp("Object_fromJSON", list->word->word)==0 || strcmp("Object::fromJSON", list->word->word)==0) {
             ret = Object_fromJSON(list->next);
             bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
             return ret;
         }
 
         // bgCore Object_toJSON
-        if (strcmp(list->word->word, "Object_toJSON")==0 || strcmp(list->word->word, "Object::toJSON")==0) {
+        if (strcmp("Object_toJSON", list->word->word)==0 || strcmp("Object::toJSON", list->word->word)==0) {
             list = list->next;
             ToJSONMode mode = tj_real;
             int indentLevel = 0;
@@ -181,7 +180,7 @@ int bgCore_builtin(WORD_LIST* list)
                 else if (strcmp("--sys"   , param)==0) { mode        = tj_sys; }
                 else if (strcmp("--indent", param)==0) { indentLevel = atol(bgOptionGetOpt(&list)); }
                 else                                   { return assertError(NULL, "invalid option '%s'\n", list->word->word); }
-                list = list->next;
+                list = (list) ? list->next : NULL;
             }
 
             BashObj this;
@@ -196,7 +195,7 @@ int bgCore_builtin(WORD_LIST* list)
         }
 
         // bgCore ConstructObjectFromJson
-        if (strcmp(list->word->word, "ConstructObjectFromJson")==0) {
+        if (strcmp("ConstructObjectFromJson", list->word->word)==0) {
             ret = ConstructObjectFromJson(list->next);
             bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
             return ret;
@@ -206,19 +205,26 @@ int bgCore_builtin(WORD_LIST* list)
         // ### MISC ##################################################################################################################
 
 
-        // bgCore ShellContext_dump
-        if (strcmp(list->word->word, "ShellContext_dump")==0) {
+        // bgCore varOutput
+        if (strcmp("varOutput", list->word->word)==0) {
             list=list->next;
-            ShellContext_dump(shell_variables, (list!=NULL));
-            //ShellContext_dump(global_variables, (list!=NULL));
+            BGRetVar* retVar = BGRetVar_new();
+            while (list && (*(list->word->word) == '-' || *(list->word->word) == '+')) {
+                if (strcmp("--",list->word->word)==0) { list=list->next; break; }
+                else if ((BGRetVar_initFromOpts(&retVar, &list)));
+                else break; //assertError(NULL, "invalid option '%s'\n", list->word->word);
+                list = (list) ? list->next : NULL;
+            }
+            outputValues(retVar, list);
+            if (retVar)
+                xfree(retVar);
             bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
-            return ret;
+            return EXECUTION_SUCCESS;
         }
 
 
-
         // bgCore findInLibPaths
-        if (strcmp(list->word->word, "findInLibPaths")==0) {
+        if (strcmp("findInLibPaths", list->word->word)==0) {
             list=list->next;
             char* foundPath = findInLibPaths(list->word->word);
             list=list->next;
@@ -231,7 +237,7 @@ int bgCore_builtin(WORD_LIST* list)
         }
 
         // bgCore import <scriptName>
-        if (strcmp(list->word->word, "import")==0) {
+        if (strcmp("import", list->word->word)==0) {
             list = list->next;
             char* param = (list) ? list->word->word : NULL;
             int importFlags = 0;
@@ -267,7 +273,7 @@ int bgCore_builtin(WORD_LIST* list)
         }
 
         // bgCore manifestGet [-p|--pkg=<pkgMatch>] [-o|--output='$n'] <assetTypeMatch> <assetNameMatch>
-        if (strcmp(list->word->word, "manifestGet")==0) {
+        if (strcmp("manifestGet", list->word->word)==0) {
             list = list->next;
             char* param = (list) ? list->word->word : NULL;
             char* pkgMatch = NULL;
@@ -306,15 +312,25 @@ int bgCore_builtin(WORD_LIST* list)
 
         // ### Debugging and tests ##################################################################################################################
 
+        // bgCore ShellContext_dump
+        if (strcmp("ShellContext_dump", list->word->word)==0) {
+            list=list->next;
+            ShellContext_dump(shell_variables, (list!=NULL));
+            //ShellContext_dump(global_variables, (list!=NULL));
+            bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+            return ret;
+        }
+
+
         // bgCore testAssertError
-        if (strcmp(list->word->word, "testAssertError")==0) {
+        if (strcmp("testAssertError", list->word->word)==0) {
             testAssertError(list->next);
             bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
             return EXECUTION_SUCCESS;
         }
 
         // bgCore transTest
-        if (strcmp(list->word->word, "transTest")==0) {
+        if (strcmp("transTest", list->word->word)==0) {
             printf("START '%s'\n",WordList_toString(list));
             list = list->next;
             while (list && *list->word->word=='-') {

@@ -55,6 +55,7 @@ extern int source_builtin (WORD_LIST *);
 extern jmp_buf assertErrorJmpPoint;
 
 extern int assertError(WORD_LIST* opts, char* fmt, ...);
+extern void bgWarn(char* fmt, ...);
 
 
 
@@ -185,10 +186,11 @@ extern BUCKET_CONTENTS* AssocItr_peek(AssocItr* pI);
 // BGRetVar
 //    This supports a function that returns it result in a flexible way. See man(3) bgOptions_DoOutputVarOpts
 
-typedef enum {rt_simple, rt_array, rt_set, rt_echo} BGRetType;
+typedef enum {rt_simple, rt_array, rt_set, rt_echo, rt_arrayRef, rt_noop} BGRetType;
 
 typedef struct {
     SHELL_VAR* var;
+    char* arrayRef;
     BGRetType type;
     int appendFlag;
     char* delim;
@@ -196,7 +198,7 @@ typedef struct {
 
 extern void      BGRetVar_init(BGRetVar* retVar);
 extern BGRetVar* BGRetVar_new();
-extern BGRetVar* BGRetVar_initFromOpts(BGRetVar* retVar, WORD_LIST** pArgs);
+extern int       BGRetVar_initFromOpts(BGRetVar** retVar, WORD_LIST** pArgs);
 extern void      outputValue(BGRetVar* retVar, char* value);
 extern void      outputValues(BGRetVar* retVar, WORD_LIST* values);
 
