@@ -223,11 +223,46 @@ void ShellVar_assocCopyElements(HASH_TABLE* dest, HASH_TABLE* source)
 // WordList
 // native WORD_LIST functions are mostly in make_cmd.h
 
+char* WordList_shift(WORD_LIST** list)
+{
+    WORD_LIST* front = (*list);
+    (*list) = (*list)->next;
+    front->next = NULL;
+    char* retVal = savestring(front->word->word);
+    WordList_free(front);
+    return retVal;
+}
+
+void WordList_shiftFree(WORD_LIST** list, int count)
+{
+    WORD_LIST* front = (*list);
+    while (count-- > 0 && (*list)) {
+        WORD_LIST* tmp = (*list);
+        (*list) = (*list)->next;
+        if (count <= 0)
+            tmp->next = NULL;
+    }
+    WordList_free(front);
+}
+
+void WordList_freeUpTo(WORD_LIST** list, WORD_LIST* stop)
+{
+    WORD_LIST* tmp = (*list);
+    int loopProtector = 100;
+    while (tmp->next != stop && loopProtector-- > 0)
+        tmp = tmp->next;
+    if (loopProtector <=0)
+        assertError(NULL, "WordList_freeUpTo: 'stop' is not within 100 elements of the list 'list'");
+    tmp->next = NULL;
+    WordList_free((*list));
+    (*list) = NULL;
+}
+
 WORD_LIST* WordList_copy(WORD_LIST* src)
 {
     WORD_LIST* dst = (src) ? make_word_list(make_word(src->word->word),NULL) : NULL;
     WORD_LIST* tail = dst;
-    src = src->next;
+    src = (src) ? src->next : NULL;
     while (src) {
         tail->next = make_word_list(make_word(src->word->word),NULL);
         tail = tail->next;
@@ -264,13 +299,18 @@ WORD_LIST* WordList_join(WORD_LIST* args1, WORD_LIST* args2)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // AssocItr
 
-BUCKET_CONTENTS* AssocItr_init(AssocItr* pI, HASH_TABLE* pTbl)
+void AssocItr_init(AssocItr* pI, HASH_TABLE* pTbl)
 {
     pI->table = pTbl;
     pI->position=0;
     pI->item=NULL;
     pI->item = NULL; //AssocItr_next(pI);
-    return pI->item;
+}
+
+BUCKET_CONTENTS* AssocItr_first(AssocItr* pI, HASH_TABLE* pTbl)
+{
+    AssocItr_init(pI, pTbl);
+    return AssocItr_next(pI);
 }
 
 BUCKET_CONTENTS* AssocItr_next(AssocItr* pI)
@@ -444,12 +484,12 @@ char* BGCheckOpt(char* spec, WORD_LIST** pArgs)
 
 void outputValue(BGRetVar* retVar, char* value)
 {
-    char* delim = (retVar && retVar->delim) ? retVar->delim : ifs_firstchar(NULL);
-
     if (!retVar || retVar->type==rt_echo) {
-        printf("%s%s",value, delim);
+        printf("%s%s",value, (retVar && retVar->delim) ? retVar->delim : "\n");
         return;
     }
+
+    char* delim = (retVar && retVar->delim) ? retVar->delim : ifs_firstchar(NULL);
 
     switch (retVar->type) {
         case rt_arrayRef:
@@ -554,6 +594,25 @@ void BGRetVar_init(BGRetVar* this)
     this->var = NULL;
     this->arrayRef = NULL;
     this->type = rt_echo;
+    this->appendFlag = 0;
+    this->delim = NULL;
+}
+
+void BGRetVar_initFromVarname(BGRetVar* this, char* varname)
+{
+    if (!varname || !(*varname)) {
+        this->type = rt_echo;
+        this->var = NULL;
+        this->arrayRef = NULL;
+    } else if (valid_array_reference(varname, VA_NOEXPAND)) {
+        this->type = rt_arrayRef;
+        this->var = NULL;
+        this->arrayRef = varname;
+    } else {
+        this->type = rt_simple;
+        this->var = ShellVar_findUpVar(varname);
+        this->arrayRef = NULL;
+    }
     this->appendFlag = 0;
     this->delim = NULL;
 }

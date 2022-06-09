@@ -45,6 +45,25 @@ char* save2string(char* s1, char* s2)
     return p;
 }
 
+char* save3string(char* s1, char* s2, char* s3)
+{
+    char* p = xmalloc(strlen(s1) + strlen(s2) + strlen(s3) +1);
+    strcpy(p, s1);
+    strcat(p, s2);
+    strcat(p, s3);
+    return p;
+}
+
+char* save4string(char* s1, char* s2, char* s3, char* s4)
+{
+    char* p = xmalloc(strlen(s1) + strlen(s2) + strlen(s3) + strlen(s4) +1);
+    strcpy(p, s1);
+    strcat(p, s2);
+    strcat(p, s3);
+    strcat(p, s4);
+    return p;
+}
+
 
 char* bgMakeAnchoredRegEx(char* expr)
 {

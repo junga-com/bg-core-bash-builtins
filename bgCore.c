@@ -90,6 +90,13 @@ int bgCore_builtin(WORD_LIST* list)
 
         // ### Objects ###############################################################################################################
 
+        // bgCore IsAnObjRef
+        if (strcmp("IsAnObjRef", list->word->word)==0) {
+            ret = IsAnObjRef(list->next) ? 0 : 1;
+            bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+            return ret;
+        }
+
         // bgCore ConstructObject
         if (strcmp("ConstructObject", list->word->word)==0) {
             BashObj* pObj = ConstructObject(list->next);
@@ -108,6 +115,8 @@ int bgCore_builtin(WORD_LIST* list)
 
         // bgCore _bgclassCall <oid> <refClass> <hierarchyLevel> |<objSyntaxStart> [<p1,2> ... <pN>]
         if (strcmp("_bgclassCall", list->word->word)==0) {
+            // __bgtrace("\n#### %s\n", WordList_toString(list));
+            // _bgtraceStack();
             ret = _bgclassCall(list->next);
             bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
             return ret;

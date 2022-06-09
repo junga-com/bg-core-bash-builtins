@@ -11,6 +11,8 @@
 extern int isNumber(char* string);
 extern char* savestringn(char* x, int n);
 extern char* save2string(char* s1, char* s2);
+extern char* save3string(char* s1, char* s2, char* s3);
+extern char* save4string(char* s1, char* s2, char* s3, char* s4);
 extern char* bgMakeAnchoredRegEx(char* expr);
 extern size_t freadline(FILE* file, char* buf, size_t* pBufAllocSize);
 extern int matchFilter(char* filter, char* value);

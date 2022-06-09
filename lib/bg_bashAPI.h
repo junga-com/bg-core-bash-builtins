@@ -140,8 +140,9 @@ extern WORD_LIST* ShellVar_arrayToWordList(SHELL_VAR* var);
 extern SHELL_VAR* ShellVar_assocCreate(char* varname);
 #define ShellVar_assocCreateGlobal(varname)    make_new_assoc_variable(varname)
 #define ShellVar_assocUnset(var)               unbind_variable(var->name)
-#define ShellVar_assocUnsetEl(var)             assoc_remove(assoc_cell(var->name))
+#define ShellVar_assocUnsetEl(var,indexStr)    assoc_remove(assoc_cell(var), indexStr)
 #define ShellVar_assocGet(var,indexStr)        assoc_reference(assoc_cell(var), indexStr)
+#define ShellVar_assocGetS(varname,indexStr)   assoc_reference(assoc_cell(ShellVar_find(varname)), indexStr)
 #define ShellVar_assocSet(var,indexStr,value)  do { VUNSETATTR(var, att_invisible);  assoc_insert(assoc_cell(var), savestring(indexStr), value); } while(0)
 #define ShellVar_assocSize(var)                assoc_num_elements(assoc_cell(var))
 #define ShellVar_assocClear(var)               assoc_flush(assoc_cell(var))
@@ -151,10 +152,15 @@ extern void ShellVar_assocCopyElements(HASH_TABLE* dest, HASH_TABLE* source);
 // WordList
 // native WORD_LIST functions are mostly in make_cmd.h
 
-#define WordList_unshift(list, word)  make_word_list(make_word(word), list)
-#define WordList_toString(list)       string_list(list)
-#define WordList_fromString(contents, seperators, quotedFlag)    list_string(contents, seperators, quotedFlag)
-#define WordList_reverse(list)        REVERSE_LIST(list, WORD_LIST*)
+extern char* WordList_shift(     WORD_LIST** list);
+extern void  WordList_shiftFree( WORD_LIST** list, int count);
+extern void  WordList_freeUpTo(  WORD_LIST** list, WORD_LIST* stop);
+#define      WordList_unshift(   list, word)    make_word_list(make_word(word), list)
+
+#define      WordList_toString(  list)          string_list(list)
+#define      WordList_fromString(contents, seperators, quotedFlag)    list_string(contents, seperators, quotedFlag)
+#define      WordList_reverse(   list)          REVERSE_LIST(list, WORD_LIST*)
+#define      WordList_free(      list)          do { dispose_words(list); list=NULL; } while(0)
 #define IFS " \t\n\0"
 
 extern WORD_LIST* WordList_copy(WORD_LIST* src);
@@ -171,7 +177,16 @@ typedef struct {
     int position;
 } AssocItr;
 
-extern BUCKET_CONTENTS* AssocItr_init(AssocItr* pI, HASH_TABLE* pTbl);
+// two patterns:
+//   AssocItr itr;
+//   for (BUCKET_CONTENTS* item=AssocItr_first(&itr,assoc_cell(var)); item; item=AssocItr_next(&itr) )
+// or..
+//   AssocItr itr; AssocItr_init(&itr,assoc_cell(var));
+//   BUCKET_CONTENTS* bVar;
+//   while (bVar=AssocItr_next(&itr) )
+
+extern void             AssocItr_init(AssocItr* pI, HASH_TABLE* pTbl);
+extern BUCKET_CONTENTS* AssocItr_first(AssocItr* pI, HASH_TABLE* pTbl);
 extern BUCKET_CONTENTS* AssocItr_next(AssocItr* pI);
 extern BUCKET_CONTENTS* AssocItr_peek(AssocItr* pI);
 
@@ -197,6 +212,7 @@ typedef struct {
 } BGRetVar;
 
 extern void      BGRetVar_init(BGRetVar* retVar);
+extern void      BGRetVar_initFromVarname(BGRetVar* retVar, char* varname);
 extern BGRetVar* BGRetVar_new();
 extern int       BGRetVar_initFromOpts(BGRetVar** retVar, WORD_LIST** pArgs);
 extern void      outputValue(BGRetVar* retVar, char* value);

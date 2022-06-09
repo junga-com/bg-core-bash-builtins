@@ -47,6 +47,24 @@ char* MemberTypeToString(MemberType mt, char* errorMsg, char* _rsvMemberValue)
     return temp;
 }
 
+ObjExprOperators ObjExprOpFromString(char* s)
+{
+    if (strcmp(""          ,s)==0)   return eo_defaultOp;
+    if (strcmp(".unset"    ,s)==0)   return eo_unset;
+    if (strcmp(".exists"   ,s)==0)   return eo_exists;
+    if (strcmp(".isA"      ,s)==0)   return eo_isA;
+    if (strcmp(".getType"  ,s)==0)   return eo_getType;
+    if (strcmp(".getOID"   ,s)==0)   return eo_getOID;
+    if (strcmp(".getRef"   ,s)==0)   return eo_getRef;
+    if (strcmp(".toString" ,s)==0)   return eo_toString;
+    if (strcmp("=new"      ,s)==0)   return eo_eqNew;
+    if (strcmp("="         ,s)==0)   return eo_equal;
+    if (strcmp("+="        ,s)==0)   return eo_plusEqual;
+    if (strcmp("::"        ,s)==0)   return eo_dblColon;
+    assertError(NULL, "unknown object expression operator '%s'",s);
+    return eo_defaultOp; // never reached
+}
+
 
 
 char* extractOID(char* objRef)
@@ -196,7 +214,7 @@ int BashObj_init(BashObj* pObj, char* name, char* refClass, char* hierarchyLevel
 
     pObj->vThis=ShellVar_find(name);
     if (!(pObj->vThis))
-        return assertError(NULL,"Error - <oid> (%s) does not exist \n", name);
+        return assertError(NULL,"BashObj_init: <oid>(%s) does not exist \n", name);
     if (!assoc_p(pObj->vThis) && !array_p(pObj->vThis)) {
         char* objRefString = ShellVar_get(pObj->vThis);
         BashObjRef oRef;
@@ -290,7 +308,7 @@ void BashObj_initFromObjRef(BashObj* pObj, char* objRefStr)
 
 void BashObj_setupMethodCallContextDone(BashObj* this)
 {
-__bgtrace("!!! %p : FREEING namerefMembers in BashObj_setupMethodCallContextDone\n", this->namerefMembers);
+//__bgtrace("!!! %p : FREEING namerefMembers in BashObj_setupMethodCallContextDone\n", this->namerefMembers);
     xfree(this->namerefMembers);
     this->namerefMembers = NULL;
 }
@@ -371,7 +389,7 @@ BashObj* BashObj_makeNewObject(char* _CLASS, SHELL_VAR* vObjVar, ...)
     WORD_LIST* args = make_word_list(make_word(vObjVar->name), NULL);
     args = make_word_list(make_word(_CLASS), args);
     BashObj* pObj = ConstructObject(args);
-    dispose_words(args);
+    WordList_free(args);
     if (vTmpObjVar)
         ShellVar_unset(vTmpObjVar);
     bgtracePop();
@@ -469,7 +487,7 @@ BashObj* ConstructObject(WORD_LIST* args)
     // this is the case of 'local obj=$(NewObject ...)' where obj gets set to an objRef to a heap_ array that does not exist in its
     // process space but can be restored from the tmp file that NewObject creates
     // The first time _bgclassCall is invoked with that objRef, it will call us with the OID of the ref to create it
-    if (!vObjVar && strncasecmp(_objRefVar, "heap_a", 6)==0) {
+    if (!vObjVar && !valid_array_reference(_objRefVar,VA_NOEXPAND)  && strncasecmp(_objRefVar, "heap_a", 6)==0) {
         bgtrace1(1,"objVar:(%s) non-existent heap var\n", _objRefVar);
         strcpy(newObj->name, _objRefVar);
         if (isNumericArray)
@@ -528,9 +546,9 @@ BashObj* ConstructObject(WORD_LIST* args)
         xfree(tstr);  tstr = NULL;
 
         // if _objRefVar is an array reference (v[idx]) vObjVar will not be found but we can still set it like a normal var
-        if (valid_array_reference(_objRefVar,VA_NOEXPAND))
+        if (valid_array_reference(_objRefVar,VA_NOEXPAND)) {
             ShellVar_setS(_objRefVar, newObj->ref);
-        else if (vObjVar) {
+        } else if (vObjVar) {
             ShellVar_set(vObjVar, newObj->ref);
         }
         else {
@@ -621,9 +639,9 @@ BashObj* ConstructObject(WORD_LIST* args)
         bgtrace2(2,"!!!### popping var ctx for 'ConstructObject %s %s'\n\n",_CLASS, _objRefVar);
     }
 
-__bgtrace("!!! %p : FREEING namerefMembers in ConstructObject\n", newObj->namerefMembers);
+//__bgtrace("!!! %p : FREEING namerefMembers in ConstructObject\n", newObj->namerefMembers);
     BashObj_setupMethodCallContextDone(newObj);
-    dispose_words(hierarchyList);
+    WordList_free(hierarchyList);
 
     bgtracePop();
     bgtrace1(1,"END ConstructObject(%s) \n",label);
@@ -671,6 +689,19 @@ int BashObj_setMemberValue(BashObj* pObj, char* memberName, char* value)
     }
     return EXECUTION_SUCCESS;
 }
+
+void BashObj_unsetMember(BashObj* pObj, char* memberName)
+{
+    if (!memberName)
+        return;
+    if (*memberName == '_')
+        ShellVar_assocUnsetEl(pObj->vThisSys, memberName);
+    else if (assoc_p(pObj->vThis))
+        ShellVar_assocUnsetEl(pObj->vThis   , memberName);
+    else if (array_p(pObj->vThis))
+        ShellVar_arrayUnsetS( pObj->vThis   , memberName);
+}
+
 
 void BashObj_setClass(BashObj* pObj, char* newClassName)
 {
@@ -767,6 +798,7 @@ int BashObj_setupMethodCallContext(BashObj* pObj, BashObjectSetupMode mode, char
         ShellVar_refCreateSet( "this"           , pObj->vThis->name             );
         ShellVar_refCreateSet( "_this"          , pObj->vThisSys->name          );
         ShellVar_refCreateSet( "static"         , pObj->vCLASS->name            );
+        ShellVar_refCreateSet( "refClass"       , (pObj->refClass) ? pObj->refClass : pObj->vCLASS->name );
         ShellVar_refCreateSet( "class"          , pObj->vCLASS->name            );
         ShellVar_refCreateSet( "_VMT"           , pObj->vVMT->name              );
 
@@ -779,7 +811,7 @@ int BashObj_setupMethodCallContext(BashObj* pObj, BashObjectSetupMode mode, char
         if (assoc_p(pObj->vThis)) {
             if (! pObj->namerefMembers) {
                 pObj->namerefMembers = hash_create(0);
-__bgtrace("!!! %p : making namerefMembers\n", pObj->namerefMembers);
+//__bgtrace("!!! %p : making namerefMembers\n", pObj->namerefMembers);
             }
             ObjMemberItr i;
             for (BUCKET_CONTENTS* item=ObjMemberItr_init(&i,pObj, ovt_both); item; item=ObjMemberItr_next(&i)) {
@@ -911,7 +943,7 @@ void DeclareClassEnd(char* className)
         ShellVar_refCreateSet("newClass",className);
         BashObj* pNewClass = BashObj_find(className, NULL,0);
         BashObj_setupMethodCallContext(pNewClass, sm_wholeShebang, NULL);
-__bgtrace("!!! %p : FREEING namerefMembers in DeclareClassEnd\n", pNewClass->namerefMembers);
+//__bgtrace("!!! %p : FREEING namerefMembers in DeclareClassEnd\n", pNewClass->namerefMembers);
         BashObj_setupMethodCallContextDone(pNewClass);
         xfree(pNewClass);
         ShellVar_refUnsetS("static");
@@ -921,7 +953,7 @@ __bgtrace("!!! %p : FREEING namerefMembers in DeclareClassEnd\n", pNewClass->nam
         bgtrace1(1,"STOR skipping 'static::%s::__construct' (not found) \n",className);
     }
 
-    dispose_words(constructionArgs);
+    WordList_free(constructionArgs);
     bgtracePop(); bgtrace1(1,"END DeclareClassEnd(%s)\n", className);
 }
 
@@ -978,7 +1010,7 @@ int _classUpdateVMT(char* className, int forceFlag)
     int classNameLen=strlen(className);
     BashClass class; BashClass_init(&class,className);
 
-    // # force resets the vmtCacheNum of this entire class hierarchy so that the algorithm will rescan them all during this run
+    // # forceFlag will reset the vmtCacheNum of this entire class hierarchy so that the algorithm will rescan them all during this run
     if (forceFlag) {
         BGString classHierarchy; BGString_initFromStr(&classHierarchy, ShellVar_assocGet(class.vClass, "classHierarchy") );
         BGString_replaceWhitespaceWithNulls(&classHierarchy);
@@ -1074,6 +1106,69 @@ int _classUpdateVMT(char* className, int forceFlag)
 
     xfree(currentCacheNumStr);
     return EXECUTION_SUCCESS;
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// CMD: IsAnObjRef
+
+// this returns the C notion of false(0) and true(1)
+int IsAnObjRef(WORD_LIST* args)
+{
+    if (!args) return 0;
+    if (strcmp("_bgclassCall",args->word->word)==0) {
+        args = args->next;
+        if (!args) return 0;
+        //char* oid = args->word->word;
+
+        args = args->next;
+        if (!args) return 0;
+        //char* class = args->word->word;
+
+        args = args->next;
+        if (!args) return 0;
+        char* superFlag = args->word->word;
+        if ((*superFlag != '0') && (*superFlag != '1')) return 0;
+
+        args = args->next;
+        if (!args) return 0;
+        if (*args->word->word == '|') return 1;
+
+        return 0;
+    }
+
+    return IsAnObjRefS(args->word->word);
+}
+
+// this returns the C notion of false(0) and true(1)
+int IsAnObjRefS(char* str)
+{
+    if (strncmp("_bgclassCall",str,12)!=0)
+        return 0;
+    char* s = str + 12;
+    if (!whitespace(*s))
+        return 0;
+    while (*s && whitespace(*s)) s++;
+
+    // pointing at <oid>
+    while (*s && !whitespace(*s)) s++;
+    while (*s && whitespace(*s)) s++;
+
+    // pointing at <className>
+    while (*s && !whitespace(*s)) s++;
+    while (*s && whitespace(*s)) s++;
+
+    // pointing at <superFlag>
+    if (*s!='0' && *s!='1')
+        return 0;
+    while (*s && !whitespace(*s)) s++;
+    while (*s && whitespace(*s)) s++;
+
+    // pointing at |
+    if (*s!='|')
+        return 0;
+
+    return 1;
 }
 
 
@@ -1217,9 +1312,11 @@ int _bgclassCall(WORD_LIST* list)
     // some operators dont require a space between the operator and the first arg so if match[5] is not empty, create
     // a new list head with it
     SHELL_VAR* vArgs = make_local_array_variable("_argsV",0);
+    WORD_LIST* methodArgs = WordList_copy(list);
     int argsNonEmpty=0;
     if (matches[5].rm_so<matches[5].rm_eo) {
         argsNonEmpty=1;
+        methodArgs = WordList_unshift(methodArgs, savestringn(objSyntaxStart+matches[5].rm_so,(matches[5].rm_eo-matches[5].rm_so)) );
         WORD_LIST argsList;
         argsList.next=list;
         argsList.word = xmalloc(sizeof(*argsList.word));
@@ -1396,49 +1493,425 @@ int _bgclassCall(WORD_LIST* list)
         // shift  -- we know in this case that $1 came from the expression and had to be insterted into vArgs and dollar so list
         // is $@ without it
         remember_args(list,1);
-        assign_compound_array_list (vArgs, list, 0);
+        assign_compound_array_list(vArgs, list, 0);
 
         _rsvMemberType=mt_method;
+        _rsvMemberTypeStr = MemberTypeToString(_rsvMemberType, NULL, _rsvMemberValue);
         xfree(_memberOp); _memberOp=savestring("");
     }
 
+    ObjExprOperators memberOp = ObjExprOpFromString(_memberOp);
 
-    if (_rsvMemberType==mt_method && strcmp(_memberOp,"")==0) {
 
-        _classUpdateVMT(objInstance.vCLASS->name ,0);
+    // local variables used in the switch cases...
+    int        exitCode = 0;
+    char*      value    = NULL;
+    WORD_LIST* args     = NULL;
+    char*      _METHOD  = NULL;
+    SHELL_VAR* vMethod  = NULL;
+    char*      _CLASS   = NULL;
+    char*      retVal   = "";
+    BashObjRef objRef;
+    BGRetVar   retVar;
 
-        // local _METHOD
-        // if [[ "${_rsvMemberName}" =~ .:: ]]; then
-        //     _METHOD="${_rsvMemberName}"
-        // else
-        //     _METHOD="${_VMT[_method::${_rsvMemberName}]}"
-        // fi
-        char* _METHOD=NULL;
-        if (virtOverride) {
-            // local _METHOD="$_rsvMemberName"
-            _METHOD=_rsvMemberName;
-        } else {
-            _METHOD = BashObj_getMethod(&objInstance, _rsvMemberName);
-            if (!_METHOD && objInstance.superCallFlag) {
-                // do noop -- for he time being, the bash function detects and handles this case if _METHOD is empty
+    bgtrace2(1, "_bgclassCall op:type='%s:%s'\n", (_memberOp) ? _memberOp : "defaultOp", _rsvMemberTypeStr);
+
+
+    switch (CA(memberOp,_rsvMemberType)) {
+
+        //########################################################################################################################
+        // eo_defaultOp
+
+        case CA(eo_defaultOp,mt_nullVar) :
+            exitCode = 1;
+        break;
+        case CA(eo_defaultOp,mt_nullMethod) :
+            assertError(NULL, "method not found '%s'", _rsvMemberName);
+        break;
+        case CA(eo_defaultOp,mt_nullEither) :
+            assertError(NULL, "niether method nor member variable found in this object '%s'",_rsvMemberName);
+        break;
+
+        case CA(eo_defaultOp,mt_primitive) :
+            value = ShellVar_assocGet(objInstance.vThis, _rsvMemberName);
+            BGRetVar_initFromVarname(&retVar, (methodArgs) ? methodArgs->word->word : "");
+            outputValue(&retVar, value);
+        break;
+
+        case CA(eo_defaultOp,mt_object) :
+            args = WordList_unshift(methodArgs, "|.toString");
+            args = WordList_unshift(args, "0");
+            args = WordList_unshift(args, objInstance.vCLASS->name);
+            args = WordList_unshift(args, objInstance.vThis->name);
+            _bgclassCall(args);
+            WordList_freeUpTo(&args, methodArgs);
+        break;
+
+        case CA(eo_defaultOp,mt_method) :
+            _classUpdateVMT(objInstance.vCLASS->name ,0);
+
+            if (virtOverride) {
+                // $obj.<class>::<method> ...
+                // in the virtual override syntax, the complete <class>::<method> name is in the syntax so we dont look it up in the VMT
+                // local _METHOD="$_rsvMemberName"
+                _METHOD=_rsvMemberName;
+                vMethod = ShellFunc_find(_METHOD);
+                if (!vMethod)
+                    assertError(NULL, "overriden method does not exist '%s'", _METHOD);
+            } else {
+                // normal method call
+                _METHOD = BashObj_getMethod(&objInstance, _rsvMemberName);
+                if (!_METHOD && !objInstance.superCallFlag) {
+                    assertError(NULL, "method (%s) not found in class ('%s')", _rsvMemberName, objInstance.vCLASS->name);
+                }
+                vMethod = ShellFunc_find(_METHOD);
+                if (!vMethod)
+                    assertError(NULL, "this method was found in the VMT (%s) but does not exist. This must be a logic error in _bgclassCall. '%s'", objInstance.vVMT->name, _METHOD);
             }
-        }
-        ShellVar_createSet("_METHOD", (_METHOD)?_METHOD:"");
+            ShellVar_createSet("_METHOD", (_METHOD)?_METHOD:"");
 
-        // setup the rest of the method environment now that we know we will be invoking a shell method.
-        BashObj_setupMethodCallContext(&objInstance, sm_membersOnly, _METHOD);
+            // setup the rest of the method environment now that we know we will be invoking a shell method.
+            BashObj_setupMethodCallContext(&objInstance, sm_membersOnly, _METHOD);
+
+            SHELL_VAR* vOnEnterFunc = ShellFunc_find("objOnEnterMethod");
+            if (vOnEnterFunc) {
+                args = WordList_unshift(methodArgs, "objOnEnterMethod");
+                ShellFunc_execute(vOnEnterFunc, args);
+                WordList_freeUpTo(&args, methodArgs);
+            }
+            args = WordList_unshift(methodArgs, _METHOD);
+            exitCode = ShellFunc_execute(vMethod, args);
+            WordList_freeUpTo(&args, methodArgs);
+        break;
+
+
+        //########################################################################################################################
+        // eo_dblColon (::)
+
+        // $obj::<method> p1 p2
+        // static call where obj can be a Class object or an instance.
+        case CA(eo_dblColon,mt_self) :
+            if (strcmp("Class",objInstance.vCLASS->name)==0 )
+                _CLASS=ShellVar_assocGet(objInstance.vThis, "name");
+            else
+                _CLASS=objInstance.vCLASS->name;
+
+            SHELL_VAR* vStatic = ShellVar_find(_CLASS);
+            if (!vStatic)
+                assertError(NULL, "Class '$s' not found while executing static method call");
+            if (!assoc_p(vStatic))
+                assertError(NULL, "Bad Class '$s' is not a global associative array while executing static method call");
+
+            _classUpdateVMT(_CLASS,0);
+
+            // this is a static call so unset the this pointer vars. Our state array is in 'static', not 'this'
+            ShellVar_refUnsetS("this");
+            ShellVar_refUnsetS("_this");
+            ShellVar_unsetS("_OID");
+            ShellVar_unsetS("_OID_sys");
+
+            ShellVar_refUnsetS("static");
+            ShellVar_refCreateSet("static", _CLASS);
+
+            ShellVar_refUnsetS("_VMT");
+            char* vmtName = save2string(_CLASS, "_vmt");
+            ShellVar_refCreateSet("_VMT", vmtName);
+
+            if (!methodArgs)
+                assertError(NULL, "object syntax error. $obj::<methodname> is missing <methodname>");
+
+            char* _METHOD_key = save2string("_static::",methodArgs->word->word);
+            _METHOD = ShellVar_assocGetS(vmtName, _METHOD_key);
+            if (!_METHOD)
+                assertError(NULL, "'%s' is not a member function of the Class '%s'", _METHOD_key, _CLASS);
+
+            vMethod = ShellFunc_find(_METHOD);
+            if (!vMethod)
+                assertError(NULL, "The method '%s', found in VMT '%s[%s]' does not exist.", _METHOD, vmtName, _METHOD_key);
+
+
+            AssocItr i;
+            for (BUCKET_CONTENTS* item=AssocItr_first(&i,assoc_cell(vStatic)); item; item=AssocItr_next(&i)) {
+                if (strcmp(item->key,"0")!=0 && strcmp(item->key,"_Ref")!=0 && item->data ) {
+                    if (strncmp(item->data, "_bgclassCall",12)==0) {
+                        bgtrace1(3,"!!! item->key='%s'\n", item->key);
+                        char* memOid = extractOID(item->data);
+                        ShellVar_refCreateSet(item->key, memOid);
+                        xfree(memOid);
+                    } else if (strncmp(item->data, "heap_",5)==0) {
+                        ShellVar_refCreateSet(item->key, item->data);
+                    }
+                }
+            }
+
+            args = WordList_unshift(methodArgs, vMethod->name);
+            exitCode = ShellFunc_execute(vMethod, methodArgs);
+            WordList_freeUpTo(&args, methodArgs);
+
+            xfree(_METHOD_key);
+            xfree(vmtName);
+        break;
+
+
+        case CA(eo_dblColon,mt_unknown) :
+        case CA(eo_dblColon,mt_nullVar) :
+        case CA(eo_dblColon,mt_nullMethod) :
+        case CA(eo_dblColon,mt_nullEither) :
+        case CA(eo_dblColon,mt_object) :
+        case CA(eo_dblColon,mt_primitive) :
+        case CA(eo_dblColon,mt_method) :
+        case CA(eo_dblColon,mt_both) :
+        case CA(eo_dblColon,mt_invalidExpression) :
+            assertError(NULL, "Invalid use of the :: operator in object expression.");
+        break;
+
+
+        //########################################################################################################################
+        // eo_unset (.unset)
+
+        case CA(eo_unset,mt_self) :
+            // unset on the base object is a noop -- maybe it should assert?
+            exitCode = 0;
+        break;
+
+        case CA(eo_unset,mt_primitive) :
+            BashObj_unsetMember(&objInstance, _rsvMemberName);
+            exitCode = 0;
+        break;
+
+        case CA(eo_unset,mt_nullVar) :
+        case CA(eo_unset,mt_nullMethod) :
+        case CA(eo_unset,mt_nullEither) :
+        case CA(eo_unset,mt_method) :
+            exitCode = 0;
+        break;
+
+        case CA(eo_unset,mt_object) :
+            args = WordList_unshift(NULL, _rsvMemberValue);
+            args = WordList_unshift(args, "DeleteObject");
+            ShellFunc_executeS(args);
+            WordList_free(args);
+            BashObj_unsetMember(&objInstance, _rsvMemberName);
+            exitCode = 0;
+        break;
+
+
+        //########################################################################################################################
+        // eo_exists (.exists)
+
+        case CA(eo_exists,0x00) ... CA(eo_exists,0x0F) :
+            switch (_rsvMemberType) {
+                case mt_object :
+                case mt_primitive :
+                case mt_method :
+                case mt_both :
+                case mt_self :
+                    exitCode = 0;
+                    break;
+                default:
+                    exitCode = 1;
+            }
+        break;
+
+
+        //########################################################################################################################
+        // eo_isA (.isA)
+
+        case CA(eo_isA,0x00) ... CA(eo_isA,0x0F) :
+            if (!methodArgs)
+                assertError(NULL, "<type> is a required argument to <obExpr>.isA <type>");
+            char* classTblLookup;
+            switch (_rsvMemberType) {
+                case mt_self :
+                    classTblLookup = save3string(objInstance.vCLASS->name, ",", methodArgs->word->word);
+                    exitCode = (NULL!=ShellVar_assocGetS("_classIsAMap", classTblLookup)) ? 0 : 1;
+                    xfree(classTblLookup);
+                break;
+                case mt_object :
+                    BashObjRef_init(&objRef, _rsvMemberValue);
+                    char* classTblLookup = save3string(objRef.className, ",", methodArgs->word->word);
+                    exitCode = (NULL!=ShellVar_assocGetS("_classIsAMap", classTblLookup)) ? 0 : 1;
+                    xfree(classTblLookup);
+                break;
+                default:
+                    exitCode = (strcmp(methodArgs->word->word,_rsvMemberTypeStr)==0) ? 0 : 1;
+            }
+        break;
+
+
+        //########################################################################################################################
+        // eo_getType (.getType)
+
+        case CA(eo_getType,0x00) ... CA(eo_getType,0x0F) :
+            switch (_rsvMemberType) {
+                case mt_self   : retVal = objInstance.vCLASS->name; break;
+                case mt_object :
+                    BashObjRef_init(&objRef, _rsvMemberValue);
+                    retVal = objRef.className;
+                break;
+                default:
+                    tstr = strstr(_rsvMemberTypeStr, ":either");
+                    if (tstr)
+                        *tstr = '\0';
+                    retVal = _rsvMemberTypeStr;
+                    break;
+            }
+            BGRetVar_initFromVarname(&retVar, (methodArgs) ? methodArgs->word->word : "");
+            outputValue(&retVar, retVal);
+            exitCode = 0;
+        break;
+
+
+        //########################################################################################################################
+        // eo_getOID (.getOID)
+
+        case CA(eo_getOID,0x00) ... CA(eo_getOID,0x0F) :
+            switch (_rsvMemberType) {
+                case mt_object : BashObjRef_init(&objRef, _rsvMemberValue);
+                                 retVal = objRef.oid;
+                                 break;
+                case mt_self   : retVal = objInstance.vThis->name; break;
+                default:         retVal = NULL;
+            }
+            if (retVal) {
+                BGRetVar_initFromVarname(&retVar, (methodArgs) ? methodArgs->word->word : "");
+                outputValue(&retVar, retVal);
+                exitCode = 0;
+            } else
+                exitCode = 1;
+        break;
+
+
+        //########################################################################################################################
+        // eo_getRef (.getRef)
+
+        case CA(eo_getRef,0x00) ... CA(eo_getRef,0x0F) :
+            switch (_rsvMemberType) {
+                case mt_self   : retVal = objInstance.ref; break;
+                case mt_object : retVal = _rsvMemberValue; break;
+                default:         retVal = NULL;
+            }
+            if (retVal) {
+                BGRetVar_initFromVarname(&retVar, (methodArgs) ? methodArgs->word->word : "");
+                outputValue(&retVar, retVal);
+                exitCode = 0;
+            } else
+                exitCode = 1;
+        break;
+
+
+        //########################################################################################################################
+        // eo_toString (.toString)
+
+        case CA(eo_toString,mt_self) :
+            args = WordList_unshift(methodArgs, "Object::toString");
+            ShellFunc_executeS(args);
+            WordList_freeUpTo(&args, methodArgs);
+        break;
+
+        case CA(eo_toString,mt_object) :
+            BashObjRef_init(&objRef, _rsvMemberValue);
+            args = WordList_unshift(methodArgs, "|.toString");
+            args = WordList_unshift(args, "0");
+            args = WordList_unshift(args, objRef.className);
+            args = WordList_unshift(args, objRef.oid);
+            _bgclassCall(args);
+            WordList_freeUpTo(&args, methodArgs);
+        break;
+
+        case CA(eo_toString,mt_primitive) :
+            args = WordList_unshift(methodArgs, _rsvMemberValue);
+            args = WordList_unshift(args, "--value");
+            args = WordList_unshift(args, _rsvMemberName);
+            args = WordList_unshift(args, "--name");
+            args = WordList_unshift(args, "Primitive::toString");
+            ShellFunc_executeS(args);
+            WordList_freeUpTo(&args, methodArgs);
+        break;
+
+        case CA(eo_toString,mt_nullVar) :
+        case CA(eo_toString,mt_nullMethod) :
+        case CA(eo_toString,mt_nullEither) :
+            tstr = strstr(_rsvMemberTypeStr, ":either");
+            if (tstr)
+                *tstr = '\0';
+            args = WordList_unshift(methodArgs, _rsvMemberTypeStr);
+            args = WordList_unshift(args, "--value");
+            args = WordList_unshift(args, _rsvMemberName);
+            args = WordList_unshift(args, "--name");
+            args = WordList_unshift(args, "Primitive::toString");
+            ShellFunc_executeS(args);
+            WordList_freeUpTo(&args, methodArgs);
+        break;
+
+        case CA(eo_toString,mt_method) :
+            _classUpdateVMT(_CLASS,0);
+            retVal = save3string("method<",_rsvMemberValue,"()>");
+            args = WordList_unshift(methodArgs, retVal);
+            args = WordList_unshift(args, "--value");
+            args = WordList_unshift(args, _rsvMemberName);
+            args = WordList_unshift(args, "--name");
+            args = WordList_unshift(args, "Primitive::toString");
+            ShellFunc_executeS(args);
+            WordList_freeUpTo(&args, methodArgs);
+            xfree(retVal);
+        break;
+
+
+        //########################################################################################################################
+        // eo_eqNew (=new)
+
+        case CA(eo_eqNew,0x00) ... CA(eo_eqNew,0x0F) :
+            if (_rsvMemberType==mt_self)
+                assertError(NULL, "direct object assignment (as opposed to member variable assignment) is not yet supported");
+            char* newClassName = (methodArgs) ? WordList_shift(&methodArgs)  : savestring("Object");
+            char* instanceName = save4string(objInstance.vThis->name,"[",_rsvMemberName,"]");
+            methodArgs = WordList_unshift(methodArgs, instanceName);
+            methodArgs = WordList_unshift(methodArgs, newClassName);
+            ConstructObject(methodArgs);
+            xfree(instanceName);
+            xfree(newClassName);
+        break;
+
+
+        //########################################################################################################################
+        // eo_plusEqual (+=)
+
+        case CA(eo_plusEqual,0x00) ... CA(eo_plusEqual,0x0F) :
+            if (_rsvMemberType==mt_self)
+                assertError(NULL, "+= direct object assignment (as opposed to member variable assignment) is not yet supported");
+            BGString buf; BGString_initFromStr(&buf, BashObj_getMemberValue(&objInstance, _rsvMemberName));
+            retVal = WordList_toString(methodArgs);
+            BGString_append(&buf, retVal, "");
+            BashObj_setMemberValue(&objInstance, _rsvMemberName, buf.buf);
+            xfree(retVal);
+            BGString_free(&buf);
+        break;
+
+
+        //########################################################################################################################
+        // eo_equal (=)
+
+        case CA(eo_equal,0x00) ... CA(eo_equal,0x0F) :
+            if (_rsvMemberType==mt_self)
+                assertError(NULL, "+= direct object assignment (as opposed to member variable assignment) is not yet supported");
+            retVal = WordList_toString(methodArgs);
+            BashObj_setMemberValue(&objInstance, _rsvMemberName, retVal);
+            xfree(retVal);
+        break;
     }
-    __bgtrace("!!! %p : FREEING namerefMembers in _bgclassCall\n", objInstance.namerefMembers);
-    BashObj_setupMethodCallContextDone(&objInstance);
+
 
     // cleanup before we leave
+//__bgtrace("!!! %p : FREEING namerefMembers in _bgclassCall\n", objInstance.namerefMembers);
+    BashObj_setupMethodCallContextDone(&objInstance);
     xfree(_rsvMemberTypeStr);
     xfree(_rsvMemberName);_rsvMemberName=NULL;
     xfree(_memberExpression);_memberExpression=NULL;
     xfree(_memberOp); _memberOp=NULL;
 //    discard_unwind_frame ("bgCore");
 
-    return (EXECUTION_SUCCESS);
+    return (exitCode);
 }
 
 
