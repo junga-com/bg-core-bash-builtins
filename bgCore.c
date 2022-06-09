@@ -43,8 +43,7 @@ void testAssertError(WORD_LIST* args)
 	if (args)
 		assertError(WordList_fromString("-v name",IFS,0), "this is a test error '%s'", "hooters");
 	// SHELL_VAR* func = ShellFunc_find("myCode");
-	// args = make_word_list( make_word("thisfunc") ,args);
-	// execute_shell_function(func, args);
+	// ShellFunc_execute(func, args);
 
 	printf("testAssertError ENDING\n");
 	__bgtrace("testAssertError ENDING\n");

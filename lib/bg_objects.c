@@ -7,6 +7,12 @@
 #include "BGString.h"
 #include "bg_import.h"
 
+
+void assertObjExpressionError()
+{
+	assertError(NULL,"");
+}
+
 char* MemberTypeToString(MemberType mt, char* errorMsg, char* _rsvMemberValue)
 {
 	char* temp=NULL;
@@ -440,11 +446,11 @@ BashObj* ConstructObject(WORD_LIST* args)
 		bgtrace1(1,"dyn ctor exists ...'%s'\n",tstr);
 		char* objVar = args->word->word;
 		WORD_LIST* dArgs = WordList_copy(args);
-		dArgs = make_word_list(make_word((dynData)?dynData:""), dArgs);
-		dArgs = make_word_list(make_word(tstr), dArgs);
+		dArgs = WordList_unshift(dArgs, (dynData)?dynData:"");
 		// if the class ctor returns true, we are done, otherwise it wants us to continue constructing the object
 		// 34 means it threw an exception (and its being caught) so we should end right away
 		int result = ShellFunc_execute(fDynCtor, dArgs);
+		WordList_free(dArgs);
 		if (result == 0) {
 			xfree(dynData);
 			xfree(tstr); tstr = NULL;
@@ -471,8 +477,7 @@ BashObj* ConstructObject(WORD_LIST* args)
 		return NULL;
 	}
 	char* _objRefVar = args->word->word;
-	// dont remove this arg because we need a burner arg when calling execute_shell_function
-	//args = args->next;
+	args = args->next;
 
 	SHELL_VAR* vObjVar = ShellVar_find(_objRefVar);
 
@@ -948,7 +953,7 @@ void DeclareClassEnd(char* className)
 		xfree(pNewClass);
 		ShellVar_refUnsetS("static");
 		ShellVar_refCreateSet("static", className);
-		execute_shell_function(vClassDynCtor, constructionArgs->next);
+		ShellFunc_execute(vClassDynCtor, constructionArgs->next->next);
 	} else {
 		bgtrace1(1,"STOR skipping 'static::%s::__construct' (not found) \n",className);
 	}
@@ -1575,13 +1580,9 @@ int _bgclassCall(WORD_LIST* list)
 
 			SHELL_VAR* vOnEnterFunc = ShellFunc_find("objOnEnterMethod");
 			if (vOnEnterFunc) {
-				args = WordList_unshift(methodArgs, "objOnEnterMethod");
-				ShellFunc_execute(vOnEnterFunc, args);
-				WordList_freeUpTo(&args, methodArgs);
+				ShellFunc_execute(vOnEnterFunc, methodArgs);
 			}
-			args = WordList_unshift(methodArgs, _METHOD);
-			exitCode = ShellFunc_execute(vMethod, args);
-			WordList_freeUpTo(&args, methodArgs);
+			exitCode = ShellFunc_execute(vMethod, methodArgs);
 		break;
 
 
@@ -1644,9 +1645,7 @@ int _bgclassCall(WORD_LIST* list)
 				}
 			}
 
-			args = WordList_unshift(methodArgs, vMethod->name);
 			exitCode = ShellFunc_execute(vMethod, methodArgs);
-			WordList_freeUpTo(&args, methodArgs);
 
 			xfree(_METHOD_key);
 			xfree(vmtName);
@@ -1905,6 +1904,7 @@ int _bgclassCall(WORD_LIST* list)
 	// cleanup before we leave
 //__bgtrace("!!! %p : FREEING namerefMembers in _bgclassCall\n", objInstance.namerefMembers);
 	BashObj_setupMethodCallContextDone(&objInstance);
+	WordList_free(methodArgs);
 	xfree(_rsvMemberTypeStr);
 	xfree(_rsvMemberName);_rsvMemberName=NULL;
 	xfree(_memberExpression);_memberExpression=NULL;

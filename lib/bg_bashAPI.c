@@ -23,13 +23,10 @@ int assertError(WORD_LIST* opts, char* fmt, ...)
 	BGString msg;    BGString_init(&msg, 100);
 	va_list vargs;   SH_VA_START (vargs, fmt);
 	BGString_appendfv(&msg, "", fmt, vargs);
-	args = make_word_list( make_word(msg.buf) , args);
+	args = WordList_unshift(args, msg.buf);
 
 	// now add the opts to the front
 	args = WordList_join(opts, args);
-
-	// and lastly add the funcname we are calling (b/c execute_shell_function burns the first arg)
-	args = make_word_list( make_word("assertError") , args);
 
 	__bgtrace("!!! assertError in builtin: %s\n", msg.buf);
 	BGString_free(&msg);
@@ -37,7 +34,7 @@ int assertError(WORD_LIST* opts, char* fmt, ...)
 	_bgtraceStack();
 
 	SHELL_VAR* func = ShellFunc_find("assertError");
-	execute_shell_function(func, args);
+	ShellFunc_execute(func, args);
 
 	// TODO: implement the run_unwind_frame mechanism
 	// run_unwind_frame("bgAssertError")
@@ -108,12 +105,12 @@ WORD_LIST* ShellVar_arrayToWordList(SHELL_VAR* var)
 	WORD_LIST* ret=NULL;
 	if (array_p(var)) {
 		for (ARRAY_ELEMENT* el = (array_cell(var))->head->prev; el!=(array_cell(var))->head; el=el->prev ) {
-			ret = make_word_list(make_word(el->value), ret);
+			ret = WordList_unshift(ret, el->value);
 		}
 	} else if (assoc_p(var)) {
 
 	} else {
-		ret = make_word_list(make_word(ShellVar_get(var)), ret);
+		ret = WordList_unshift(ret, ShellVar_get(var));
 	}
 	return ret;
 }
@@ -140,29 +137,45 @@ SHELL_VAR* ShellFunc_findWithSuffix(char* funcname, char* suffix)
 int ShellFunc_executeS(WORD_LIST* args)
 {
 	if (!args)
-		return assertError(NULL,"ShellFunc_execute called without a function name in args");
+		assertError(NULL,"ShellFunc_execute called without a function name in args");
 
 	char* funcname = args->word->word;
 	SHELL_VAR* func = ShellFunc_find(funcname);
 	if (!func)
-		return assertError(NULL,"ShellFunc_execute: could not find function '%s'",funcname);
+		assertError(NULL,"ShellFunc_execute: could not find function '%s'",funcname);
 
 	ShellVar_unsetS("catch_errorCode");
+
 	int ret = execute_shell_function(func, args);
-	if (ShellVar_findGlobal("catch_errorCode"))
+
+	char* exceptionTest = ShellVar_getS("catch_errorCode");
+	if ( exceptionTest && *exceptionTest ) {
+		// TODO: implement the run_unwind_frame mechanism
+		// run_unwind_frame("bgAssertError")
+		__bgtrace("!!! ShellFunc_execute: detected assertError, errorCode='%s' descr='%s'\n",  ShellVar_getS("catch_errorCode"), ShellVar_getS("catch_errorDescription"));
+		longjmp(assertErrorJmpPoint, 36);
 		return 34;
+	}
 	return ret;
 }
 
 int ShellFunc_execute(SHELL_VAR* func, WORD_LIST* args)
 {
-	if (!args)
-		return assertError(NULL,"ShellFunc_execute called with empty args");
+	WORD_LIST* argsWithFN = WordList_unshift(args, func->name);
 
 	ShellVar_unsetS("catch_errorCode");
-	int ret = execute_shell_function(func, args);
-	if (ShellVar_findGlobal("catch_errorCode"))
+
+	int ret = execute_shell_function(func, argsWithFN);
+
+	WordList_freeUpTo(&argsWithFN, args);
+	char* exceptionTest = ShellVar_getS("catch_errorCode");
+	if ( exceptionTest && *exceptionTest ) {
+		// TODO: implement the run_unwind_frame mechanism
+		// run_unwind_frame("bgAssertError")
+		__bgtrace("!!! ShellFunc_execute: detected assertError, errorCode='%s' descr='%s'\n",  ShellVar_getS("catch_errorCode"), ShellVar_getS("catch_errorDescription"));
+		longjmp(assertErrorJmpPoint, 36);
 		return 34;
+	}
 	return ret;
 }
 
@@ -260,11 +273,11 @@ void WordList_freeUpTo(WORD_LIST** list, WORD_LIST* stop)
 
 WORD_LIST* WordList_copy(WORD_LIST* src)
 {
-	WORD_LIST* dst = (src) ? make_word_list(make_word(src->word->word),NULL) : NULL;
+	WORD_LIST* dst = (src) ? WordList_unshift(NULL, src->word->word) : NULL;
 	WORD_LIST* tail = dst;
 	src = (src) ? src->next : NULL;
 	while (src) {
-		tail->next = make_word_list(make_word(src->word->word),NULL);
+		tail->next = WordList_unshift(NULL, src->word->word);
 		tail = tail->next;
 		src = src->next;
 	}
@@ -275,7 +288,7 @@ WORD_LIST* WordList_copyR(WORD_LIST* src)
 {
 	WORD_LIST* dst = NULL;
 	while (src) {
-		dst = make_word_list(make_word(src->word->word),dst);
+		dst = WordList_unshift(dst, src->word->word);
 		src = src->next;
 	}
 	return dst;
