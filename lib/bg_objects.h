@@ -12,31 +12,31 @@ extern void onUnload_objects();
 // BashObjects MemberType
 
 typedef enum {
-    mt_unknown            = 0x01,  // we do not (yet) know
-    mt_nullVar            = 0x02,  // last member of chain did not exist - syntax tells us a member variable is expected
-    mt_nullMethod         = 0x03,  // last member of chain did not exist - syntax tells us a member function is expected
-    mt_nullEither         = 0x04,  // last member of chain did not exist - syntax could be either a var or function
-    mt_object             = 0x05,  // last member of chain is a member var that contains an <objRef>
-    mt_primitive          = 0x06,  // last member of chain is a member var that does not contain an <objRef>
-    mt_method             = 0x07,  // last member of chain is a member function
-    mt_both               = 0x08,  // last member of chain is both a member variable and a member function
-    mt_self               = 0x09,  // there was no chain. an object is being directly invoked
-    mt_invalidExpression  = 0x0A   // could not parse completely because of a syntax error
+	mt_unknown            = 0x01,  // we do not (yet) know
+	mt_nullVar            = 0x02,  // last member of chain did not exist - syntax tells us a member variable is expected
+	mt_nullMethod         = 0x03,  // last member of chain did not exist - syntax tells us a member function is expected
+	mt_nullEither         = 0x04,  // last member of chain did not exist - syntax could be either a var or function
+	mt_object             = 0x05,  // last member of chain is a member var that contains an <objRef>
+	mt_primitive          = 0x06,  // last member of chain is a member var that does not contain an <objRef>
+	mt_method             = 0x07,  // last member of chain is a member function
+	mt_both               = 0x08,  // last member of chain is both a member variable and a member function
+	mt_self               = 0x09,  // there was no chain. an object is being directly invoked
+	mt_invalidExpression  = 0x0A   // could not parse completely because of a syntax error
 } MemberType;
 
 typedef enum {
-    eo_defaultOp          = 0x10,
-    eo_unset              = 0x20,
-    eo_exists             = 0x30,
-    eo_isA                = 0x40,
-    eo_getType            = 0x50,
-    eo_getOID             = 0x60,
-    eo_getRef             = 0x70,
-    eo_toString           = 0x80,
-    eo_eqNew              = 0x90,
-    eo_equal              = 0xA0,
-    eo_plusEqual          = 0xB0,
-    eo_dblColon           = 0xC0
+	eo_defaultOp          = 0x10,
+	eo_unset              = 0x20,
+	eo_exists             = 0x30,
+	eo_isA                = 0x40,
+	eo_getType            = 0x50,
+	eo_getOID             = 0x60,
+	eo_getRef             = 0x70,
+	eo_toString           = 0x80,
+	eo_eqNew              = 0x90,
+	eo_equal              = 0xA0,
+	eo_plusEqual          = 0xB0,
+	eo_dblColon           = 0xC0
 } ObjExprOperators;
 
 extern char* MemberTypeToString(MemberType mt, char* errorMsg, char* _rsvMemberValue);
@@ -88,8 +88,8 @@ typedef enum {tj_all,tj_sys,tj_real} ToJSONMode;
 // BashClass
 
 typedef struct {
-    SHELL_VAR* vClass;
-    SHELL_VAR* vVMT;
+	SHELL_VAR* vClass;
+	SHELL_VAR* vVMT;
 } BashClass;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -97,11 +97,11 @@ typedef struct {
 
 typedef enum { ovt_normal, ovt_sys, ovt_both } ObjVarType;
 typedef struct {
-    BashObj* pObj;
-    ObjVarType type;
-    HASH_TABLE* table;
-    BUCKET_CONTENTS* item;
-    int position;
+	BashObj* pObj;
+	ObjVarType type;
+	HASH_TABLE* table;
+	BUCKET_CONTENTS* item;
+	int position;
 } ObjMemberItr;
 
 

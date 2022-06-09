@@ -14,67 +14,67 @@
 // Misc Functions
 
 int isNumber(char* string) {
-    if (string == 0 || *string=='\0')
-      return 0;
+	if (string == 0 || *string=='\0')
+	  return 0;
 
-    errno = 0;
-    char *ep;
-    strtoimax (string, &ep, 10);
-    if (errno || ep == string)
-      return 0;	/* errno is set on overflow or underflow */
+	errno = 0;
+	char *ep;
+	strtoimax (string, &ep, 10);
+	if (errno || ep == string)
+	  return 0;	/* errno is set on overflow or underflow */
 
-    // if there are characters left over, its not a valid number
-    if (*ep != '\0')
-        return 0;
+	// if there are characters left over, its not a valid number
+	if (*ep != '\0')
+		return 0;
 
-    return (1);
+	return (1);
 }
 
 char* savestringn(char* x, int n)
 {
-    char *p=(char *)strncpy (xmalloc (1 + n), (x),n);
-    p[n]='\0';
-    return p;
+	char *p=(char *)strncpy (xmalloc (1 + n), (x),n);
+	p[n]='\0';
+	return p;
 }
 
 char* save2string(char* s1, char* s2)
 {
-    char* p = xmalloc(strlen(s1) + strlen(s2)+1);
-    strcpy(p, s1);
-    strcat(p, s2);
-    return p;
+	char* p = xmalloc(strlen(s1) + strlen(s2)+1);
+	strcpy(p, s1);
+	strcat(p, s2);
+	return p;
 }
 
 char* save3string(char* s1, char* s2, char* s3)
 {
-    char* p = xmalloc(strlen(s1) + strlen(s2) + strlen(s3) +1);
-    strcpy(p, s1);
-    strcat(p, s2);
-    strcat(p, s3);
-    return p;
+	char* p = xmalloc(strlen(s1) + strlen(s2) + strlen(s3) +1);
+	strcpy(p, s1);
+	strcat(p, s2);
+	strcat(p, s3);
+	return p;
 }
 
 char* save4string(char* s1, char* s2, char* s3, char* s4)
 {
-    char* p = xmalloc(strlen(s1) + strlen(s2) + strlen(s3) + strlen(s4) +1);
-    strcpy(p, s1);
-    strcat(p, s2);
-    strcat(p, s3);
-    strcat(p, s4);
-    return p;
+	char* p = xmalloc(strlen(s1) + strlen(s2) + strlen(s3) + strlen(s4) +1);
+	strcpy(p, s1);
+	strcat(p, s2);
+	strcat(p, s3);
+	strcat(p, s4);
+	return p;
 }
 
 
 char* bgMakeAnchoredRegEx(char* expr)
 {
-    char* s = xmalloc(strlen(expr)+3);
-    *s = '\0';
-    if (*expr != '^')
-        strcat(s, "^");
-    strcat(s, expr);
-    if (expr[strlen(expr)-1] != '$')
-        strcat(s, "$");
-    return s;
+	char* s = xmalloc(strlen(expr)+3);
+	*s = '\0';
+	if (*expr != '^')
+		strcat(s, "^");
+	strcat(s, expr);
+	if (expr[strlen(expr)-1] != '$')
+		strcat(s, "$");
+	return s;
 }
 
 
@@ -87,21 +87,21 @@ char* bgMakeAnchoredRegEx(char* expr)
 // size and pBufAllocSize will be updated to reflect the new allocation size.
 size_t freadline(FILE* file, char* buf, size_t* pBufAllocSize)
 {
-    buf[0]='\0';
-    char* readResult = fgets(buf, *pBufAllocSize,file);
-    size_t readLen = strlen(buf);
-    while (readResult && (buf[readLen-1] != '\n')) {
-        *pBufAllocSize *= 2;
-        buf = xrealloc(buf, *pBufAllocSize);
+	buf[0]='\0';
+	char* readResult = fgets(buf, *pBufAllocSize,file);
+	size_t readLen = strlen(buf);
+	while (readResult && (buf[readLen-1] != '\n')) {
+		*pBufAllocSize *= 2;
+		buf = xrealloc(buf, *pBufAllocSize);
 
-        readResult = fgets(buf+readLen, *pBufAllocSize/2,file);
-        readLen = strlen(buf+readLen)+readLen;
-    }
-    if (readLen>0 && buf[readLen-1] == '\n') {
-        buf[readLen-1] = '\0';
-        readLen--;
-    }
-    return readLen;
+		readResult = fgets(buf+readLen, *pBufAllocSize/2,file);
+		readLen = strlen(buf+readLen)+readLen;
+	}
+	if (readLen>0 && buf[readLen-1] == '\n') {
+		buf[readLen-1] = '\0';
+		readLen--;
+	}
+	return readLen;
 }
 
 // returns true(1) if <value> matches <filter> or if <filter> is null
@@ -114,93 +114,93 @@ size_t freadline(FILE* file, char* buf, size_t* pBufAllocSize)
 //    <value>  : the value to match against <filter>
 int matchFilter(char* filter, char* value)
 {
-    if (!filter || !*filter || strcmp(filter,"^$")==0)
-        return 1;
+	if (!filter || !*filter || strcmp(filter,"^$")==0)
+		return 1;
 
-    regex_t regex;
-    if (regcomp(&regex, filter, REG_EXTENDED)) {
-        fprintf(stderr, "error: invalid regex filter (%s)\n", filter);
-        return 1;
-    }
-    return regexec(&regex, value, 0, NULL, 0) == 0;
+	regex_t regex;
+	if (regcomp(&regex, filter, REG_EXTENDED)) {
+		fprintf(stderr, "error: invalid regex filter (%s)\n", filter);
+		return 1;
+	}
+	return regexec(&regex, value, 0, NULL, 0) == 0;
 }
 
 
 void hexDump(char *desc, void *addr, int len)
 {
-    int i;
-    unsigned char buff[17];
-    unsigned char *pc = (unsigned char*)addr;
+	int i;
+	unsigned char buff[17];
+	unsigned char *pc = (unsigned char*)addr;
 
-    // Output description if given.
-    if (desc != NULL)
-        __bgtrace("%s:\n", desc);
+	// Output description if given.
+	if (desc != NULL)
+		__bgtrace("%s:\n", desc);
 
-    // Process every byte in the data.
-    for (i = 0; i < len; i++) {
-        // Multiple of 16 means new line (with line offset).
+	// Process every byte in the data.
+	for (i = 0; i < len; i++) {
+		// Multiple of 16 means new line (with line offset).
 
-        if ((i % 16) == 0) {
-            // Just don't print ASCII for the zeroth line.
-            if (i != 0)
-                __bgtrace("  %s\n", buff);
+		if ((i % 16) == 0) {
+			// Just don't print ASCII for the zeroth line.
+			if (i != 0)
+				__bgtrace("  %s\n", buff);
 
-            // Output the offset.
-            __bgtrace("  %04x ", i);
-        }
+			// Output the offset.
+			__bgtrace("  %04x ", i);
+		}
 
-        // Now the hex code for the specific character.
-        __bgtrace(" %02x", pc[i]);
+		// Now the hex code for the specific character.
+		__bgtrace(" %02x", pc[i]);
 
-        // And store a printable ASCII character for later.
-        if ((pc[i] < 0x20) || (pc[i] > 0x7e)) {
-            buff[i % 16] = '.';
-        } else {
-            buff[i % 16] = pc[i];
-        }
+		// And store a printable ASCII character for later.
+		if ((pc[i] < 0x20) || (pc[i] > 0x7e)) {
+			buff[i % 16] = '.';
+		} else {
+			buff[i % 16] = pc[i];
+		}
 
-        buff[(i % 16) + 1] = '\0';
-    }
+		buff[(i % 16) + 1] = '\0';
+	}
 
-    // Pad out last line if not exactly 16 characters.
-    while ((i % 16) != 0) {
-        __bgtrace("   ");
-        i++;
-    }
+	// Pad out last line if not exactly 16 characters.
+	while ((i % 16) != 0) {
+		__bgtrace("   ");
+		i++;
+	}
 
-    // And print the final ASCII bit.
-    __bgtrace("  %s\n", buff);
+	// And print the final ASCII bit.
+	__bgtrace("  %s\n", buff);
 }
 
 
 int fsExists(const char* file) {
-    struct stat buf;
-    return (stat(file, &buf) == 0);
+	struct stat buf;
+	return (stat(file, &buf) == 0);
 }
 
 char* saprintf(char* fmt, ...)
 {
-    if (!fmt || !(*fmt))
-        return savestring("");
+	if (!fmt || !(*fmt))
+		return savestring("");
 
-    // we make an initial guess for the allocSize. If its too small, vsnprintf will tell us so we can then allocate the exact size.
-    // if our initial guess is too large, we waste some memory but we avoid having to call vsnprintf twice.
+	// we make an initial guess for the allocSize. If its too small, vsnprintf will tell us so we can then allocate the exact size.
+	// if our initial guess is too large, we waste some memory but we avoid having to call vsnprintf twice.
 
-    size_t allocSize = 2 * strlen(fmt);
-    char* buf = xmalloc(allocSize);
+	size_t allocSize = 2 * strlen(fmt);
+	char* buf = xmalloc(allocSize);
 
-    va_list args;
-    SH_VA_START(args, fmt);
-    va_list args2;
-    va_copy(args2,args);
+	va_list args;
+	SH_VA_START(args, fmt);
+	va_list args2;
+	va_copy(args2,args);
 
-    int actualSize = vsnprintf( buf, allocSize, fmt, args);
-    if (actualSize >= allocSize) {
-        allocSize = actualSize + 1;
-        buf = xrealloc(buf, allocSize);
-        actualSize = vsnprintf( buf, allocSize, fmt, args2);
-        if (actualSize >= allocSize)
-            assertError(NULL, "logic error. allocSize should have been large enough but something went wrong.\n");
-    }
-    return buf;
+	int actualSize = vsnprintf( buf, allocSize, fmt, args);
+	if (actualSize >= allocSize) {
+		allocSize = actualSize + 1;
+		buf = xrealloc(buf, allocSize);
+		actualSize = vsnprintf( buf, allocSize, fmt, args2);
+		if (actualSize >= allocSize)
+			assertError(NULL, "logic error. allocSize should have been large enough but something went wrong.\n");
+	}
+	return buf;
 }

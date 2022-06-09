@@ -4,12 +4,12 @@
 
 typedef enum {mf_pkgName, mf_assetType, mf_assetName, mf_assetPath} ManifestField;
 typedef struct {
-    char* line;
-    char* pkgName;
-    char* assetType;
-    char* assetName;
-    char* assetPath;
-    int alloced;
+	char* line;
+	char* pkgName;
+	char* assetType;
+	char* assetName;
+	char* assetPath;
+	int alloced;
 } ManifestRecord;
 
 typedef int (*ManifestFilterFn)(ManifestRecord* rec, ManifestRecord* target);

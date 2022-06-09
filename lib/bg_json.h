@@ -5,36 +5,36 @@
 #include "bg_objects.h"
 
 typedef enum {
-    jt_object,
-    jt_array,
-    jt_objStart,
-    jt_arrayStart,
-    jt_objEnd,
-    jt_arrayEnd,
-    jt_value,
-    jt_string,
-    jt_number,
-    jt_true,
-    jt_false,
-    jt_null,
-    jt_comma,
-    jt_colon,
-    jt_error,
-    jt_eof
+	jt_object,
+	jt_array,
+	jt_objStart,
+	jt_arrayStart,
+	jt_objEnd,
+	jt_arrayEnd,
+	jt_value,
+	jt_string,
+	jt_number,
+	jt_true,
+	jt_false,
+	jt_null,
+	jt_comma,
+	jt_colon,
+	jt_error,
+	jt_eof
 } JSONType;
 
 typedef struct {
-    JSONType type;
-    char* value;
+	JSONType type;
+	char* value;
 } JSONToken;
 
 typedef struct {
-    char* buf;
-    size_t bufAllocSize;
-    size_t length;
-    char* pos;
-    char* end;
-    char* filename;
+	char* buf;
+	size_t bufAllocSize;
+	size_t length;
+	char* pos;
+	char* end;
+	char* filename;
 } JSONScanner;
 
 

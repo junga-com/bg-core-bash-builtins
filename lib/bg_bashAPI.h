@@ -172,9 +172,9 @@ extern WORD_LIST* WordList_join(WORD_LIST* args1, WORD_LIST* args2);
 // AssocItr
 
 typedef struct {
-    HASH_TABLE* table;
-    BUCKET_CONTENTS* item;
-    int position;
+	HASH_TABLE* table;
+	BUCKET_CONTENTS* item;
+	int position;
 } AssocItr;
 
 // two patterns:
@@ -204,11 +204,11 @@ extern BUCKET_CONTENTS* AssocItr_peek(AssocItr* pI);
 typedef enum {rt_simple, rt_array, rt_set, rt_echo, rt_arrayRef, rt_noop} BGRetType;
 
 typedef struct {
-    SHELL_VAR* var;
-    char* arrayRef;
-    BGRetType type;
-    int appendFlag;
-    char* delim;
+	SHELL_VAR* var;
+	char* arrayRef;
+	BGRetType type;
+	int appendFlag;
+	char* delim;
 } BGRetVar;
 
 extern void      BGRetVar_init(BGRetVar* retVar);

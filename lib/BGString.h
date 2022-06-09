@@ -10,10 +10,10 @@
 // that can be iterated. A typical senario is getting a whitespace separated string from a SHELL_VAR, turning whitespace
 // to nulls and then iterating the words.
 typedef struct {
-    char* buf;
-    int len;
-    int allocatedLen;
-    char* itr;
+	char* buf;
+	int len;
+	int allocatedLen;
+	char* itr;
 } BGString;
 
 extern void BGString_init(BGString* pStr, int allocatedLen);
