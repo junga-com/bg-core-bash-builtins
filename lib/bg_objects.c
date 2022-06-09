@@ -1336,6 +1336,7 @@ int _bgclassCall(WORD_LIST* list)
 	// a new list head with it
 	SHELL_VAR* vArgs = make_local_array_variable("_argsV",0);
 	WORD_LIST* methodArgs = WordList_copy(list);
+	WORD_LIST* methodArgsToFree = methodArgs;
 	int argsNonEmpty=0;
 	if (matches[5].rm_so<matches[5].rm_eo) {
 		argsNonEmpty=1;
@@ -1639,6 +1640,7 @@ int _bgclassCall(WORD_LIST* list)
 				assertObjExpressionError(NULL, "object syntax error. $obj::<methodname> is missing <methodname>");
 
 			char* _METHOD_key = save2string("_static::",methodArgs->word->word);
+			methodArgs = methodArgs->next;
 			_METHOD = ShellVar_assocGetS(vmtName, _METHOD_key);
 			if (!_METHOD)
 				assertObjExpressionError(NULL, "'%s' is not a member function of the Class '%s'", _METHOD_key, _CLASS);
@@ -1921,7 +1923,7 @@ int _bgclassCall(WORD_LIST* list)
 	// cleanup before we leave
 //__bgtrace("!!! %p : FREEING namerefMembers in _bgclassCall\n", objInstance.namerefMembers);
 	BashObj_setupMethodCallContextDone(&objInstance);
-	WordList_free(methodArgs);
+	WordList_free(methodArgsToFree);
 	xfree(_rsvMemberTypeStr);
 	xfree(_rsvMemberName);_rsvMemberName=NULL;
 	xfree(_memberExpression);_memberExpression=NULL;

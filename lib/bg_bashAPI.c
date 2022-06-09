@@ -9,6 +9,10 @@ jmp_buf* jmpPoints = NULL;
 int jmpPointsAllocSize = 0;
 int jmpPointsPos = 0;
 
+int jmpPoints_getPos()
+{
+	return jmpPointsPos;
+}
 
 jmp_buf* jmpPoints_push()
 {

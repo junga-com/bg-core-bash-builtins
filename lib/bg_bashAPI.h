@@ -56,6 +56,7 @@ extern int source_builtin (WORD_LIST *);
 extern jmp_buf* jmpPoints_push();
 extern void jmpPoints_pop();
 extern void jmpPoints_longjump(int exitCode);
+extern int jmpPoints_getPos();
 
 extern int assertError(WORD_LIST* opts, char* fmt, ...);
 extern void bgWarn(char* fmt, ...);
