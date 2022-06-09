@@ -5,7 +5,38 @@
 
 #include "BGString.h"
 
-jmp_buf assertErrorJmpPoint;
+jmp_buf* jmpPoints = NULL;
+int jmpPointsAllocSize = 0;
+int jmpPointsPos = 0;
+
+
+jmp_buf* jmpPoints_push()
+{
+	if (jmpPointsAllocSize <= 0) {
+		jmpPointsAllocSize = 10;
+		jmpPoints = xmalloc(jmpPointsAllocSize*sizeof(jmp_buf));
+	}
+	if (jmpPointsAllocSize < (jmpPointsPos+1)) {
+		jmpPointsAllocSize = 2*jmpPointsAllocSize;
+		jmpPoints = xrealloc(jmpPoints, jmpPointsAllocSize*sizeof(jmp_buf));
+	}
+	return jmpPoints + jmpPointsPos++;
+}
+void jmpPoints_pop()
+{
+	jmpPointsPos--;
+}
+
+void jmpPoints_longjump(int exitCode)
+{
+	if (jmpPointsPos > 0) {
+		__bgtrace("!!! LONGJMPing at '%d'\n", jmpPointsPos-1);
+		longjmp(jmpPoints[--jmpPointsPos], exitCode);
+		__bgtrace("!!! WOOPS !!!! jump didnt jump!\n");
+	}
+	__bgtrace("!!! bgCore BUILTIN logic ERROR. trying to jump but none on the stack #########################################\n ");
+}
+
 
 // When a builtin function calls assertError, it may or may not return from the assertError call. If the script has a Try/Catch
 // block in the same PID as the builtin is running, then it will return and all the C functions on the stack has to return back up.
@@ -36,9 +67,11 @@ int assertError(WORD_LIST* opts, char* fmt, ...)
 	SHELL_VAR* func = ShellFunc_find("assertError");
 	ShellFunc_execute(func, args);
 
+	WordList_free(args);
+
 	// TODO: implement the run_unwind_frame mechanism
 	// run_unwind_frame("bgAssertError")
-	longjmp(assertErrorJmpPoint, 36);
+	jmpPoints_longjump(36);
 	return 36;
 }
 
@@ -153,7 +186,7 @@ int ShellFunc_executeS(WORD_LIST* args)
 		// TODO: implement the run_unwind_frame mechanism
 		// run_unwind_frame("bgAssertError")
 		__bgtrace("!!! ShellFunc_execute: detected assertError, errorCode='%s' descr='%s'\n",  ShellVar_getS("catch_errorCode"), ShellVar_getS("catch_errorDescription"));
-		longjmp(assertErrorJmpPoint, 36);
+		jmpPoints_longjump(36);
 		return 34;
 	}
 	return ret;
@@ -173,7 +206,7 @@ int ShellFunc_execute(SHELL_VAR* func, WORD_LIST* args)
 		// TODO: implement the run_unwind_frame mechanism
 		// run_unwind_frame("bgAssertError")
 		__bgtrace("!!! ShellFunc_execute: detected assertError, errorCode='%s' descr='%s'\n",  ShellVar_getS("catch_errorCode"), ShellVar_getS("catch_errorDescription"));
-		longjmp(assertErrorJmpPoint, 36);
+		jmpPoints_longjump(36);
 		return 34;
 	}
 	return ret;

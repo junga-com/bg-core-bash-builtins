@@ -49,31 +49,40 @@ void testAssertError(WORD_LIST* args)
 	__bgtrace("testAssertError ENDING\n");
 }
 
-
+int bgCoreNestCount = 0;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // bgCore <cmd> ....
 // This is the entry point builtin function. It dispatches the call to the specific function based on the first command word
 int bgCore_builtin(WORD_LIST* list)
 {
+	bgCoreNestCount++;
 	int ret = EXECUTION_FAILURE;
 
 	char* label = ""; if (!label);
-	bgtrace1(1,"### STRing bgCore_builtin(%s)\n", label=WordList_toString(list)); bgtracePush();
+	bgtrace0(1,"\n###############################################################################################################\n");
+	bgtrace1(1,"### %s (bgCore)\n", label=WordList_toString(list)); bgtracePush();
 	if (!list || !list->word) {
 		fprintf(stderr, "Error - <cmd> is a required argument. See usage..\n\n");
 		builtin_usage();
 		bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+		bgCoreNestCount--;
 		return (EX_USAGE);
 	}
 
 	// if anything calls assertError(), it will either terminate the PID and the rest of the builtin will not run, or if there is
 	// a Try: / Catch: block in bash that is catching the error, it will longjump back to here and continue to execute the true
 	// condition which will exit back to the parser flow.
-	if (setjmp(assertErrorJmpPoint)) {
+__bgtrace("!!! setting LONGJMP at '%d'\n", bgCoreNestCount);
+	jmp_buf* pJmpPoint = jmpPoints_push();
+	if (setjmp(*pJmpPoint)) {
 		// assertError() was called .. we just need to end without doing anything so that the bash assertError mechanism can take
 		// over
+		bgCoreNestCount--;
+__bgtrace("!!! caught the LONGJMP '%d'\n", bgCoreNestCount);
 		bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s) Returning from assertError()\n",label);
+		bgCoreNestCount--;
+		jmpPoints_pop();
 		return (EXECUTION_FAILURE);
 
 	} else {
@@ -82,6 +91,8 @@ int bgCore_builtin(WORD_LIST* list)
 		// bgCore ping
 		if (strcmp("ping", list->word->word)==0) {
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return EXECUTION_SUCCESS;
 		}
 
@@ -93,6 +104,8 @@ int bgCore_builtin(WORD_LIST* list)
 		if (strcmp("IsAnObjRef", list->word->word)==0) {
 			ret = IsAnObjRef(list->next) ? 0 : 1;
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return ret;
 		}
 
@@ -101,6 +114,8 @@ int bgCore_builtin(WORD_LIST* list)
 			BashObj* pObj = ConstructObject(list->next);
 			xfree(pObj);
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return EXECUTION_SUCCESS;
 		}
 
@@ -109,6 +124,8 @@ int bgCore_builtin(WORD_LIST* list)
 			list=list->next;
 			DeclareClassEnd(list->word->word);
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return EXECUTION_SUCCESS;
 		}
 
@@ -118,21 +135,28 @@ int bgCore_builtin(WORD_LIST* list)
 			// _bgtraceStack();
 			ret = _bgclassCall(list->next);
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return ret;
 		}
 
 		// bgCore _classUpdateVMT [-f|--force] <className>
 		if (strcmp("_classUpdateVMT", list->word->word)==0) {
-			list=list->next; if (!list) return (EX_USAGE);
+			list=list->next;
 			int forceFlag=0;
-			if (strcmp(list->word->word,"-f")==0 || strcmp(list->word->word,"--force")==0) {
-				list=list->next; if (!list) return (EX_USAGE);
-				forceFlag=1;
+			while (list && *list->word->word=='-') {
+				char* optArg;
+				if ((optArg=BGCheckOpt("-f|--force", &list)))
+					forceFlag = 1;
+				list = list->next;
 			}
-	//        begin_unwind_frame("bgCore");
+			if (!list)
+				assertError(NULL, "<className> is a required argument to _classUpdateVMT");
+
 			int result = _classUpdateVMT(list->word->word, forceFlag);
-	//        discard_unwind_frame("bgCore");
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return result;
 		}
 
@@ -150,19 +174,19 @@ int bgCore_builtin(WORD_LIST* list)
 				else if (strcmp("--sys"   , param)==0) { mode        = tj_sys; }
 				else if (strcmp("--real"  , param)==0) { mode        = tj_real; }
 				else if ((BGRetVar_initFromOpts(&retVar, &list)));
-				else                                   { return assertError(NULL, "invalid option '%s'\n", list->word->word); }
+				else                                   { assertError(NULL, "invalid option '%s'\n", list->word->word); }
 				list = (list) ? list->next : NULL;
 			}
 
-			BashObj this;
-			if (BashObj_initFromContext(&this)==EXECUTION_FAILURE)
-				return EXECUTION_FAILURE;
+			BashObj this; BashObj_initFromContext(&this);
 
 			WORD_LIST* indexList = Object_getIndexes(&this, mode);
-
 			outputValues(retVar, indexList);
+
 			xfree(retVar);
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return EXECUTION_SUCCESS;
 		}
 
@@ -174,6 +198,8 @@ int bgCore_builtin(WORD_LIST* list)
 		if (strcmp("Object_fromJSON", list->word->word)==0 || strcmp("Object::fromJSON", list->word->word)==0) {
 			ret = Object_fromJSON(list->next);
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return ret;
 		}
 
@@ -187,18 +213,18 @@ int bgCore_builtin(WORD_LIST* list)
 				if      (strcmp("--all"   , param)==0) { mode        = tj_all; }
 				else if (strcmp("--sys"   , param)==0) { mode        = tj_sys; }
 				else if (strcmp("--indent", param)==0) { indentLevel = atol(bgOptionGetOpt(&list)); }
-				else                                   { return assertError(NULL, "invalid option '%s'\n", list->word->word); }
+				else                                   { assertError(NULL, "invalid option '%s'\n", list->word->word); }
 				list = (list) ? list->next : NULL;
 			}
 
-			BashObj this;
-			if (BashObj_initFromContext(&this)==EXECUTION_FAILURE)
-				return EXECUTION_FAILURE;
+			BashObj this; BashObj_initFromContext(&this);
 
 			ret = Object_toJSON(&this, mode, indentLevel);
 			printf("\n");
 
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return ret;
 		}
 
@@ -206,6 +232,8 @@ int bgCore_builtin(WORD_LIST* list)
 		if (strcmp("ConstructObjectFromJson", list->word->word)==0) {
 			ret = ConstructObjectFromJson(list->next);
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return ret;
 		}
 
@@ -227,6 +255,8 @@ int bgCore_builtin(WORD_LIST* list)
 			if (retVar)
 				xfree(retVar);
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return EXECUTION_SUCCESS;
 		}
 
@@ -241,6 +271,8 @@ int bgCore_builtin(WORD_LIST* list)
 			else
 				printf("%s\n",foundPath);
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return ret;
 		}
 
@@ -262,7 +294,7 @@ int bgCore_builtin(WORD_LIST* list)
 				param = (list) ? list->word->word : NULL;
 			}
 			if (!list)
-				return assertError(NULL,"<scriptname> is a required argument to import\n");
+				assertError(NULL,"<scriptname> is a required argument to import\n");
 			char* scriptName = list->word->word;
 			list = list->next;
 
@@ -277,6 +309,8 @@ int bgCore_builtin(WORD_LIST* list)
 			if (scriptPath) xfree(scriptPath);
 
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return ret;
 		}
 
@@ -315,6 +349,8 @@ int bgCore_builtin(WORD_LIST* list)
 			if (target.assetName) xfree(target.assetName);
 
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return EXECUTION_SUCCESS;
 		}
 
@@ -326,6 +362,8 @@ int bgCore_builtin(WORD_LIST* list)
 			ShellContext_dump(shell_variables, (list!=NULL));
 			//ShellContext_dump(global_variables, (list!=NULL));
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return ret;
 		}
 
@@ -334,6 +372,8 @@ int bgCore_builtin(WORD_LIST* list)
 		if (strcmp("testAssertError", list->word->word)==0) {
 			testAssertError(list->next);
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return EXECUTION_SUCCESS;
 		}
 
@@ -354,13 +394,16 @@ int bgCore_builtin(WORD_LIST* list)
 			printf("remainder = '%s'\n",WordList_toString(list));
 
 			bgtracePop(); bgtrace1(1,"### ENDING bgCore_builtin(%s)\n",label);
+			jmpPoints_pop();
+			bgCoreNestCount--;
 			return EXECUTION_SUCCESS;
 		}
 
 		assertError(NULL, "error: command not recognized cmd='%s'\n", (list && list->word)?list->word->word:"");
-		return (EXECUTION_FAILURE);
 	}
 
+	jmpPoints_pop();
+	bgCoreNestCount--;
 	return (EXECUTION_FAILURE);
 }
 

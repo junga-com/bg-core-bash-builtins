@@ -8,9 +8,34 @@
 #include "bg_import.h"
 
 
-void assertObjExpressionError()
+void assertObjExpressionError(WORD_LIST* opts, char* fmt, ...)
 {
-	assertError(NULL,"");
+	WORD_LIST* args = NULL;
+
+	// format the msg and make it the last item in args (we build args backwards)
+	BGString msg;    BGString_init(&msg, 100);
+	va_list vargs;   SH_VA_START (vargs, fmt);
+	BGString_appendfv(&msg, "", fmt, vargs);
+	args = WordList_unshift(args, msg.buf);
+
+	// now add the opts to the front
+	args = WordList_join(opts, args);
+
+	__bgtrace("!!! assertObjExpressionError in builtin: %s\n", msg.buf);
+	BGString_free(&msg);
+
+	_bgtraceStack();
+
+	args = WordList_unshift(args, "assertObjExpressionError");
+
+	SHELL_VAR* func = ShellFunc_find("assertObjExpressionError");
+	execute_shell_function(func, args);
+
+	WordList_free(args);
+
+	// TODO: implement the run_unwind_frame mechanism
+	// run_unwind_frame("bgAssertError")
+	jmpPoints_longjump(36);
 }
 
 char* MemberTypeToString(MemberType mt, char* errorMsg, char* _rsvMemberValue)
@@ -212,7 +237,7 @@ void BashObj_makeVMT(BashObj* pObj)
 
 int BashObj_init(BashObj* pObj, char* name, char* refClass, char* hierarchyLevel)
 {
-	if (strlen(name) >200) return assertError(NULL,"BashObj_init: name is too long (>200)\nname='%s'\n", name);
+	if (strlen(name) >200) assertError(NULL,"BashObj_init: name is too long (>200)\nname='%s'\n", name);
 	int errFlag=0;
 
 	pObj->refClass=refClass;
@@ -220,12 +245,12 @@ int BashObj_init(BashObj* pObj, char* name, char* refClass, char* hierarchyLevel
 
 	pObj->vThis=ShellVar_find(name);
 	if (!(pObj->vThis))
-		return assertError(NULL,"BashObj_init: <oid>(%s) does not exist \n", name);
+		assertError(NULL,"BashObj_init: <oid>(%s) does not exist \n", name);
 	if (!assoc_p(pObj->vThis) && !array_p(pObj->vThis)) {
 		char* objRefString = ShellVar_get(pObj->vThis);
 		BashObjRef oRef;
 		if (!BashObjRef_init(&oRef, objRefString))
-			return assertError(NULL,"Error - <oid> (%s) is not an array nor does it contain an <objRef> string\n", name);
+			assertError(NULL,"BashObj_init: <oid>(%s) is not an array nor does it contain an <objRef> string\n", name);
 		pObj->vThis=ShellVar_find(oRef.oid);
 	}
 
@@ -241,14 +266,14 @@ int BashObj_init(BashObj* pObj, char* name, char* refClass, char* hierarchyLevel
 	// lookup the vCLASS array
 	char* _CLASS = ShellVar_assocGet(pObj->vThisSys, "_CLASS");
 	if (!_CLASS)
-		return assertError(NULL,"Error - malformed object instance. missing the _CLASS system variable. instance='%s'\n", pObj->vThisSys->name);
+		assertError(NULL,"BashObj_init: malformed object instance. missing the _CLASS system variable. instance='%s'\n", pObj->vThisSys->name);
 	pObj->vCLASS = assertClassExists(_CLASS, &errFlag); if (errFlag!=0) return EXECUTION_FAILURE;
 
 	// lookup the VMT array taking into account that an obj instance may have a separate VMT unique to it (_this[_VMT]) and if this
 	// is a $super.<method>... call, it is the VMT of the baseClass of the calling <objRef>'s refClass.
 	BashObj_makeVMT(pObj);
 	if (!pObj->vVMT)
-		return assertError(NULL,"Error - _VMT (virtual method table) is missing.\n\tobj='%s'\n\tclass='%s'\n\trefClass='%s'\n\tsuperCallFlag='%d'\n", name, _CLASS, pObj->refClass,pObj->superCallFlag);
+		assertError(NULL,"BashObj_init: _VMT (virtual method table) is missing.\n\tobj='%s'\n\tclass='%s'\n\trefClass='%s'\n\tsuperCallFlag='%d'\n", name, _CLASS, pObj->refClass,pObj->superCallFlag);
 
 	// we used pObj->name as a buffer to try lookups for several different names but now lets put the actual name in it
 	strcpy(pObj->name, pObj->vThis->name);
@@ -339,10 +364,7 @@ BashObj* BashObj_copy(BashObj* that)
 BashObj* BashObj_find(char* name, char* refClass, char* hierarchyLevel)
 {
 	BashObj* pObj = xmalloc(sizeof(BashObj));
-	if (!BashObj_init(pObj, name, refClass, hierarchyLevel)) {
-		xfree(pObj);
-		return NULL;
-	}
+	BashObj_init(pObj, name, refClass, hierarchyLevel);
 	return pObj;
 }
 
@@ -787,10 +809,9 @@ int BashObj_gotoMemberObj(BashObj* pObj, char* memberName, int allowOnDemandObjC
 		if (pErr) *pErr=EXECUTION_FAILURE;
 		return 0;
 	}
-	if (!BashObj_init(&memberObj, oRef.oid, pObj->refClass, pObj->superCallFlag ? "1":"0")) {
-		if (pErr) *pErr=EXECUTION_FAILURE;
-		return 0;
-	}
+
+	BashObj_init(&memberObj, oRef.oid, pObj->refClass, pObj->superCallFlag ? "1":"0");
+
 	memcpy(pObj,&memberObj, sizeof(*pObj));
 	return 1;
 }
@@ -864,18 +885,18 @@ int BashClass_init(BashClass* pCls, char* className)
 {
 	pCls->vClass = ShellVar_find(className);
 	if (!pCls->vClass)
-		return assertError(NULL,"bultin _classUpdateVMT: global class array does not exist for class '%s'\n", className);
+		assertError(NULL,"bultin _classUpdateVMT: global class array does not exist for class '%s'\n", className);
 	if (!assoc_p(pCls->vClass))
-		return assertError(NULL,"bultin _classUpdateVMT: global class array not an -A array for class '%s'\n", className);
+		assertError(NULL,"bultin _classUpdateVMT: global class array not an -A array for class '%s'\n", className);
 	if (invisible_p(pCls->vClass)) {
 		VUNSETATTR (pCls->vClass, att_invisible);
 	}
 
 	pCls->vVMT = ShellVar_findWithSuffix(className, "_vmt");
 	if (!pCls->vVMT)
-		return assertError(NULL,"bultin _classUpdateVMT: global class vmt array does not exist for class '%s_vmt'\n", className);
+		assertError(NULL,"bultin _classUpdateVMT: global class vmt array does not exist for class '%s_vmt'\n", className);
 	if (!assoc_p(pCls->vVMT))
-		return assertError(NULL,"bultin _classUpdateVMT: global class vmt array is not an -A array for class '%s'\n", className);
+		assertError(NULL,"bultin _classUpdateVMT: global class vmt array is not an -A array for class '%s'\n", className);
 	if (invisible_p(pCls->vVMT)) {
 		VUNSETATTR (pCls->vVMT, att_invisible);
 	}
@@ -1187,10 +1208,8 @@ int _bgclassCall(WORD_LIST* list)
 	bgtrace1(1,"starting _bgclassCall\n", WordList_toString(list));
 //    begin_unwind_frame ("bgCore");
 
-	if (!list || list_length(list) < 3) {
-		printf ("Error - not enough arguments (%d). See usage..\n\n", (list)?list_length(list):0);
-		return (EX_USAGE);
-	}
+	if (!list || list_length(list) < 3)
+		assertObjExpressionError(NULL, "Error - not enough arguments (%d). See usage..\n\n", (list)?list_length(list):0);
 
 	// first arg is the OID which is the name of the bash array that represents the object instance
 	char* oid=list->word->word;
@@ -1206,8 +1225,7 @@ int _bgclassCall(WORD_LIST* list)
 	list = list->next;
 
 	BashObj objInstance;
-	if (!BashObj_init(&objInstance, oid, refClass, refHierarchy))
-		return EXECUTION_FAILURE;
+	BashObj_init(&objInstance, oid, refClass, refHierarchy);
 
 	// at this point the <objRef> components (except the |) have been removed so its a good time to record the _memberExpression
 	// that is used as context in errors. The '|' from the <objRef> may be stuck to the first position so remove that if it is
@@ -1230,7 +1248,7 @@ int _bgclassCall(WORD_LIST* list)
 			objSyntaxStart=list->word->word +1; // +1 to start after the '|'
 			while (*objSyntaxStart && whitespace(*objSyntaxStart)) objSyntaxStart++;
 		} else {
-			return assertError(NULL,"Syntax error. the 4th argument must start with the pipe ('|') character. See usage..\n\n");
+			assertObjExpressionError(NULL,"_bgclassCall: Syntax error. the 4th argument must start with the pipe ('|') character. See usage..\n\n");
 		}
 	}
 	list = list->next;
@@ -1253,13 +1271,13 @@ int _bgclassCall(WORD_LIST* list)
 	static int regexInit;
 	if (!regexInit) {
 		if (regcomp(&regex, pattern, REG_EXTENDED)) // |REG_ICASE
-			return assertError(NULL,"error: invalid regex pattern (%s)\n", pattern);
+			assertObjExpressionError(NULL,"error: invalid regex pattern (%s)\n", pattern);
 	}
 
 	// [[ "$objSyntaxStart" =~ $reExp ]] || assertError(NULL, "invalid object expression"
 	regmatch_t *matches = malloc(sizeof(regmatch_t) * (regex.re_nsub + 1));
 	if (regexec(&regex, objSyntaxStart, regex.re_nsub + 1, matches, 0))
-		return assertError(NULL,"error: invalid object expression (%s) did not match regex='%s'\n", objSyntaxStart, pattern);
+		assertObjExpressionError(NULL,"error: invalid object expression (%s) did not match regex='%s'\n", objSyntaxStart, pattern);
 
 	// matches[0] is the whole match (op to EOL) ((opWBr)(Br)|(opNBr))(firstArg)?$
 	// matches[1] is ((opWBr)(Br)|(opNBr))
@@ -1394,7 +1412,7 @@ int _bgclassCall(WORD_LIST* list)
 			if (!isLastPart && !BashObj_gotoMemberObj(&objInstance, pCurPart, allowOnDemandObjCreation, &localErrno)) {
 				if (localErrno==EXECUTION_FAILURE)
 					return EXECUTION_FAILURE;
-				return assertError(NULL,"error: '%s' is not a member object of '%s' but it is being dereferenced as if it is. dereference='%s'\n", pCurPart, objInstance.name, pNextPart);
+				assertObjExpressionError(NULL,"error: '%s' is not a member object of '%s' but it is being dereferenced as if it is. dereference='%s'\n", pCurPart, objInstance.name, pNextPart);
 			}
 		}
 
@@ -1468,19 +1486,19 @@ int _bgclassCall(WORD_LIST* list)
 
 	/* This block creates local vars that the bash function _bgclassCall will use in deciding what to do  */
 
-	// local _rsvOID="$_rsvOID"
-	ShellVar_createSet("_rsvOID", objInstance.name);
-
-	// local _memberOp="$_memberOp"
-	ShellVar_createSet("_memberOp", _memberOp);
-
-	// local _rsvMemberName="$_rsvMemberName"
-	ShellVar_createSet("_rsvMemberName", _rsvMemberName);
-
-	// local _rsvMemberType="$_rsvMemberType"
-	ShellVar_createSet("_rsvMemberType", _rsvMemberTypeStr);
-
-	ShellVar_createSet("_resultCode", "");
+	// // local _rsvOID="$_rsvOID"
+	// ShellVar_createSet("_rsvOID", objInstance.name);
+	//
+	// // local _memberOp="$_memberOp"
+	// ShellVar_createSet("_memberOp", _memberOp);
+	//
+	// // local _rsvMemberName="$_rsvMemberName"
+	// ShellVar_createSet("_rsvMemberName", _rsvMemberName);
+	//
+	// // local _rsvMemberType="$_rsvMemberType"
+	// ShellVar_createSet("_rsvMemberType", _rsvMemberTypeStr);
+	//
+	// ShellVar_createSet("_resultCode", "");
 
 	// # fixup the :: override syntax
 	int virtOverride=0;
@@ -1507,7 +1525,6 @@ int _bgclassCall(WORD_LIST* list)
 
 	ObjExprOperators memberOp = ObjExprOpFromString(_memberOp);
 
-
 	// local variables used in the switch cases...
 	int        exitCode = 0;
 	char*      value    = NULL;
@@ -1531,10 +1548,10 @@ int _bgclassCall(WORD_LIST* list)
 			exitCode = 1;
 		break;
 		case CA(eo_defaultOp,mt_nullMethod) :
-			assertError(NULL, "method not found '%s'", _rsvMemberName);
+			assertObjExpressionError(NULL, "method not found '%s'", _rsvMemberName);
 		break;
 		case CA(eo_defaultOp,mt_nullEither) :
-			assertError(NULL, "niether method nor member variable found in this object '%s'",_rsvMemberName);
+			assertObjExpressionError(NULL, "niether method nor member variable found in this object '%s'",_rsvMemberName);
 		break;
 
 		case CA(eo_defaultOp,mt_primitive) :
@@ -1562,16 +1579,16 @@ int _bgclassCall(WORD_LIST* list)
 				_METHOD=_rsvMemberName;
 				vMethod = ShellFunc_find(_METHOD);
 				if (!vMethod)
-					assertError(NULL, "overriden method does not exist '%s'", _METHOD);
+					assertObjExpressionError(NULL, "overriden method does not exist '%s'", _METHOD);
 			} else {
 				// normal method call
 				_METHOD = BashObj_getMethod(&objInstance, _rsvMemberName);
 				if (!_METHOD && !objInstance.superCallFlag) {
-					assertError(NULL, "method (%s) not found in class ('%s')", _rsvMemberName, objInstance.vCLASS->name);
+					assertObjExpressionError(NULL, "method (%s) not found in class ('%s')", _rsvMemberName, objInstance.vCLASS->name);
 				}
 				vMethod = ShellFunc_find(_METHOD);
 				if (!vMethod)
-					assertError(NULL, "this method was found in the VMT (%s) but does not exist. This must be a logic error in _bgclassCall. '%s'", objInstance.vVMT->name, _METHOD);
+					assertObjExpressionError(NULL, "this method was found in the VMT (%s) but does not exist. This must be a logic error in _bgclassCall. '%s'", objInstance.vVMT->name, _METHOD);
 			}
 			ShellVar_createSet("_METHOD", (_METHOD)?_METHOD:"");
 
@@ -1599,9 +1616,9 @@ int _bgclassCall(WORD_LIST* list)
 
 			SHELL_VAR* vStatic = ShellVar_find(_CLASS);
 			if (!vStatic)
-				assertError(NULL, "Class '$s' not found while executing static method call");
+				assertObjExpressionError(NULL, "Class '$s' not found while executing static method call");
 			if (!assoc_p(vStatic))
-				assertError(NULL, "Bad Class '$s' is not a global associative array while executing static method call");
+				assertObjExpressionError(NULL, "Bad Class '$s' is not a global associative array while executing static method call");
 
 			_classUpdateVMT(_CLASS,0);
 
@@ -1619,16 +1636,16 @@ int _bgclassCall(WORD_LIST* list)
 			ShellVar_refCreateSet("_VMT", vmtName);
 
 			if (!methodArgs)
-				assertError(NULL, "object syntax error. $obj::<methodname> is missing <methodname>");
+				assertObjExpressionError(NULL, "object syntax error. $obj::<methodname> is missing <methodname>");
 
 			char* _METHOD_key = save2string("_static::",methodArgs->word->word);
 			_METHOD = ShellVar_assocGetS(vmtName, _METHOD_key);
 			if (!_METHOD)
-				assertError(NULL, "'%s' is not a member function of the Class '%s'", _METHOD_key, _CLASS);
+				assertObjExpressionError(NULL, "'%s' is not a member function of the Class '%s'", _METHOD_key, _CLASS);
 
 			vMethod = ShellFunc_find(_METHOD);
 			if (!vMethod)
-				assertError(NULL, "The method '%s', found in VMT '%s[%s]' does not exist.", _METHOD, vmtName, _METHOD_key);
+				assertObjExpressionError(NULL, "The method '%s', found in VMT '%s[%s]' does not exist.", _METHOD, vmtName, _METHOD_key);
 
 
 			AssocItr i;
@@ -1661,7 +1678,7 @@ int _bgclassCall(WORD_LIST* list)
 		case CA(eo_dblColon,mt_method) :
 		case CA(eo_dblColon,mt_both) :
 		case CA(eo_dblColon,mt_invalidExpression) :
-			assertError(NULL, "Invalid use of the :: operator in object expression.");
+			assertObjExpressionError(NULL, "Invalid use of the :: operator in object expression.");
 		break;
 
 
@@ -1718,7 +1735,7 @@ int _bgclassCall(WORD_LIST* list)
 
 		case CA(eo_isA,0x00) ... CA(eo_isA,0x0F) :
 			if (!methodArgs)
-				assertError(NULL, "<type> is a required argument to <obExpr>.isA <type>");
+				assertObjExpressionError(NULL, "<type> is a required argument to <obExpr>.isA <type>");
 			char* classTblLookup;
 			switch (_rsvMemberType) {
 				case mt_self :
@@ -1862,7 +1879,7 @@ int _bgclassCall(WORD_LIST* list)
 
 		case CA(eo_eqNew,0x00) ... CA(eo_eqNew,0x0F) :
 			if (_rsvMemberType==mt_self)
-				assertError(NULL, "direct object assignment (as opposed to member variable assignment) is not yet supported");
+				assertObjExpressionError(NULL, "direct object assignment (as opposed to member variable assignment) is not yet supported");
 			char* newClassName = (methodArgs) ? WordList_shift(&methodArgs)  : savestring("Object");
 			char* instanceName = save4string(objInstance.vThis->name,"[",_rsvMemberName,"]");
 			methodArgs = WordList_unshift(methodArgs, instanceName);
@@ -1878,7 +1895,7 @@ int _bgclassCall(WORD_LIST* list)
 
 		case CA(eo_plusEqual,0x00) ... CA(eo_plusEqual,0x0F) :
 			if (_rsvMemberType==mt_self)
-				assertError(NULL, "+= direct object assignment (as opposed to member variable assignment) is not yet supported");
+				assertObjExpressionError(NULL, "+= direct object assignment (as opposed to member variable assignment) is not yet supported");
 			BGString buf; BGString_initFromStr(&buf, BashObj_getMemberValue(&objInstance, _rsvMemberName));
 			retVal = WordList_toString(methodArgs);
 			BGString_append(&buf, retVal, "");
@@ -1893,7 +1910,7 @@ int _bgclassCall(WORD_LIST* list)
 
 		case CA(eo_equal,0x00) ... CA(eo_equal,0x0F) :
 			if (_rsvMemberType==mt_self)
-				assertError(NULL, "+= direct object assignment (as opposed to member variable assignment) is not yet supported");
+				assertObjExpressionError(NULL, "+= direct object assignment (as opposed to member variable assignment) is not yet supported");
 			retVal = WordList_toString(methodArgs);
 			BashObj_setMemberValue(&objInstance, _rsvMemberName, retVal);
 			xfree(retVal);

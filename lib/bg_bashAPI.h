@@ -52,7 +52,10 @@ extern int source_builtin (WORD_LIST *);
 //    // false condition is the normal builtin code
 //    ...
 // }
-extern jmp_buf assertErrorJmpPoint;
+
+extern jmp_buf* jmpPoints_push();
+extern void jmpPoints_pop();
+extern void jmpPoints_longjump(int exitCode);
 
 extern int assertError(WORD_LIST* opts, char* fmt, ...);
 extern void bgWarn(char* fmt, ...);
