@@ -35,7 +35,7 @@ void assertObjExpressionError(WORD_LIST* opts, char* fmt, ...)
 
 	// TODO: implement the run_unwind_frame mechanism
 	// run_unwind_frame("bgAssertError")
-	jmpPoints_longjump(36);
+	callFrames_longjump(36);
 }
 
 char* MemberTypeToString(MemberType mt, char* errorMsg, char* _rsvMemberValue)
@@ -294,8 +294,8 @@ int BashObj_initFromContext(BashObj* pObj)
 	pObj->vVMT = ShellVar_find("_VMT");
 	pObj->refClass = ShellVar_getS("_CLASS");
 	pObj->superCallFlag = atol(ShellVar_getS("_hierarchLevel"));
-	strncpy(pObj->ref , ShellVar_assocGet(pObj->vThisSys, "_Ref"), sizeof(pObj->ref));
-	strncpy(pObj->name, pObj->vThis->name                        , sizeof(pObj->name));
+	strncpy(pObj->ref , ShellVar_assocGet(pObj->vThisSys, "_Ref"), sizeof(pObj->ref)-1);
+	strncpy(pObj->name, pObj->vThis->name                        , sizeof(pObj->name)-1);
 	pObj->namerefMembers = NULL;
 	return EXECUTION_SUCCESS;
 }
@@ -1928,7 +1928,6 @@ int _bgclassCall(WORD_LIST* list)
 	xfree(_rsvMemberName);_rsvMemberName=NULL;
 	xfree(_memberExpression);_memberExpression=NULL;
 	xfree(_memberOp); _memberOp=NULL;
-//    discard_unwind_frame ("bgCore");
 
 	return (exitCode);
 }

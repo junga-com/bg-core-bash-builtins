@@ -85,10 +85,12 @@ char* bgMakeAnchoredRegEx(char* expr)
 // <buf> should be allocated with a malloc or equivalent function and pBufAllocSize contain the size of the
 // allocation. If <buf> is not large enough to hold the entire line, xremalloc will be used to increase its
 // size and pBufAllocSize will be updated to reflect the new allocation size.
-size_t freadline(FILE* file, char* buf, size_t* pBufAllocSize)
+ssize_t freadline(FILE* file, char* buf, size_t* pBufAllocSize)
 {
 	buf[0]='\0';
 	char* readResult = fgets(buf, *pBufAllocSize,file);
+	if (!readResult)
+		return -1;
 	size_t readLen = strlen(buf);
 	while (readResult && (buf[readLen-1] != '\n')) {
 		*pBufAllocSize *= 2;

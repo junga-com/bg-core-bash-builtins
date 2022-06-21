@@ -19,7 +19,9 @@
 // 1 == minmal bgtrace
 // 2 == more tracing
 // 9 == all tracing
-#define bgtraceLevel 0
+#ifndef bgtraceLevel
+#define bgtraceLevel 9
+#endif
 
 #if bgtraceLevel > 0
 #   define bgtrace0(level, fmt)                _bgtrace(level,fmt)

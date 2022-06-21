@@ -129,6 +129,7 @@ JSONToken* JSONToken_make(JSONType type, char* value)
 	JSONToken* this = xmalloc(sizeof(JSONToken));
 	this->type = type;
 	this->value = savestring(value);
+	jsonUnescape(this->value);
 	return this;
 }
 
@@ -137,6 +138,7 @@ JSONToken* JSONToken_maken(JSONType type, char* value, int len)
 	JSONToken* this = xmalloc(sizeof(JSONToken));
 	this->type = type;
 	this->value = savestringn(value, len);
+	jsonUnescape(this->value);
 	return this;
 }
 
@@ -434,58 +436,6 @@ JSONToken* JSONScanner_getValue(JSONScanner* this)
 		BashObj* pObj = BashObj_makeNewObject("Object",NULL);
 		jval = JSONToken_makeObject(pObj);
 		JSONScanner_getObject(this, pObj);
-		// while ((token = JSONScanner_getToken(this)) && !JSONToken_isDone(token) && token->type!=jt_objEnd) {
-		//     // The first iteration should not have a comma but we will not call it an error it it does
-		//     // also be tolerant to the caller not removing the jt_objStart token.
-		//     if (token->type == jt_comma) {
-		//         JSONToken_free(token);
-		//         token = JSONScanner_getToken(this);
-		//     }
-		//
-		//     // token should now be the name of an attribute.
-		//     if (token->type != jt_string) {
-		//         depth--;
-		//         return JSONToken_makeError(this, token, "Expected a string");
-		//     }
-		//     JSONToken* name = token;
-		//     bgtrace3(1,"%*s |name='%s'\n", depth*3,"",  JSONToken_ToString(token));
-		//
-		//     // the : separator
-		//     token = JSONScanner_getToken(this);
-		//     if (token->type != jt_colon) {
-		//         depth--;
-		//         return JSONToken_makeError(this, token, "Expected a colon");
-		//     }
-		//     JSONToken_free(token);
-		//
-		//     // the value of the attribute
-		//     JSONToken* value = JSONScanner_getValue(this);
-		//     if (!JSONType_isAValue(value->type)) {
-		//         depth--;
-		//         return JSONToken_makeError(this,value, "Unexpected token");
-		//     }
-		//
-		//     // check for some special bash object system variables for special processing
-		//     if (strcmp(name->value,"_OID")==0) {
-		//         // // use _OID to update the objDictionary so that we can fixup relative objRefs
-		//         // char* sessionOID = value;
-		//         // objDictionary[sessionOID]=currentStack->pObj->name;
-		//         // objDictionary[currentStack->pObj->name]=sessionOID;
-		//
-		//     } else if (strcmp(name->value,"_Ref")==0 || strcmp(name->value,"0")==0) {
-		//         // ignore _Ref and "0" on restore
-		//
-		//     } else if (strcmp(name->value,"_CLASS")==0) {
-		//         // oh right, you are supposed to be this kind of object
-		//         BashObj_setClass(pObj, value->value);
-		//
-		//     } else {
-		//         BashObj_setMemberValue(pObj, name->value, (JSONType_isBashObj(value->type)) ? (((BashObj*)value->value)->ref) : value->value );
-		//     }
-		//
-		//     JSONToken_free(name);
-		//     JSONToken_free(value);
-		// }
 
 	} else if (token->type==jt_arrayStart) {
 		BashObj* pObj = BashObj_makeNewObject("Array", NULL);
@@ -593,7 +543,6 @@ int ConstructObjectFromJson(WORD_LIST* list)
 		ShellVar_set(vObjVar, jValue->value);
 	}
 
-//    discard_unwind_frame ("bgCore");
 	JSONScanner_free(scanner);
 	JSONToken_free(jValue);
 	return EXECUTION_SUCCESS;

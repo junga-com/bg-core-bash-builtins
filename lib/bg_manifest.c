@@ -115,7 +115,7 @@ ManifestRecord manifestGet(char* manFile, char* outputStr, ManifestRecord* targe
 	char* buf =  xmalloc(bufSize);
 	ManifestRecord rec;    ManifestRecord_assign(&rec,    NULL,NULL,NULL,NULL);
 	BGString parser; BGString_init(&parser, 500);
-	while (freadline(manFileFD, buf, &bufSize)) {
+	while (freadline(manFileFD, buf, &bufSize) > -1) {
 		rec.line = buf;
 
 		// make a copy of buf in parser which modifies and consumes it.
