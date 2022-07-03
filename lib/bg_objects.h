@@ -106,7 +106,6 @@ typedef struct {
 
 
 extern SHELL_VAR* assertClassExists(char* className, int* pErr);
-extern SHELL_VAR* varNewHeapVar(char* attributes);
 
 // construction on BashObj from existing instances
 extern int      BashObj_init(           BashObj* pObj, char* name, char* refClass, char* hierarchyLevel);

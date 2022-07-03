@@ -17,6 +17,7 @@
 // everyone likes misc stuff
 #include "bg_misc.h"
 #include "bg_debug.h"
+#include "bg_ini.h"
 
 
 
@@ -53,10 +54,15 @@ extern int source_builtin (WORD_LIST *);
 //    ...
 // }
 
-extern jmp_buf* jmpPoints_push();
-extern void jmpPoints_pop();
-extern void jmpPoints_longjump(int exitCode);
-extern int jmpPoints_getPos();
+typedef struct {
+	jmp_buf jmpBuf;
+	char* name;
+} CallFrame;
+
+extern CallFrame* callFrames_push();                 // at the start of each builtin call this
+extern void callFrames_pop();                      // at the end of the success path call this
+extern void callFrames_longjump(int exitCode);     // at the start of the error path (in assertError or equivalent) call this
+extern int callFrames_getPos();
 
 extern int assertError(WORD_LIST* opts, char* fmt, ...);
 extern void bgWarn(char* fmt, ...);
@@ -161,10 +167,14 @@ extern void  WordList_shiftFree( WORD_LIST** list, int count);
 extern void  WordList_freeUpTo(  WORD_LIST** list, WORD_LIST* stop);
 #define      WordList_unshift(   list, word)    make_word_list(make_word(word), list)
 
+extern void  WordList_push(     WORD_LIST** list, char* word);
+extern char* WordList_pop(      WORD_LIST** list);
+
+
 #define      WordList_toString(  list)          string_list(list)
 #define      WordList_fromString(contents, seperators, quotedFlag)    list_string(contents, seperators, quotedFlag)
 #define      WordList_reverse(   list)          REVERSE_LIST(list, WORD_LIST*)
-#define      WordList_free(      list)          do { dispose_words(list); list=NULL; } while(0)
+#define      WordList_free(      list)          do { if (list) dispose_words(list); list=NULL; } while(0)
 #define IFS " \t\n\0"
 
 extern WORD_LIST* WordList_copy(WORD_LIST* src);
@@ -226,10 +236,25 @@ extern char* BGCheckOpt(char* spec, WORD_LIST** pArgs);
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// file functions
+//
+
+extern int fsExpandFiles(WORD_LIST* args);
+
+extern char* pathGetCommon(WORD_LIST* paths);
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Debugging
 //
 extern char* ShellVarFlagsToString(int flags);
 extern void ShellContext_dump(VAR_CONTEXT* varCntx, int includeVars);
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Misc
+//
+extern SHELL_VAR* varNewHeapVar(char* attributes);
 
 
 #endif // _bg_bashAPI_H_

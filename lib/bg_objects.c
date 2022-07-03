@@ -33,8 +33,6 @@ void assertObjExpressionError(WORD_LIST* opts, char* fmt, ...)
 
 	WordList_free(args);
 
-	// TODO: implement the run_unwind_frame mechanism
-	// run_unwind_frame("bgAssertError")
 	callFrames_longjump(36);
 }
 
@@ -339,8 +337,9 @@ void BashObj_initFromObjRef(BashObj* pObj, char* objRefStr)
 
 void BashObj_setupMethodCallContextDone(BashObj* this)
 {
-//__bgtrace("!!! %p : FREEING namerefMembers in BashObj_setupMethodCallContextDone\n", this->namerefMembers);
-	xfree(this->namerefMembers);
+	//__bgtrace("!!! %p : FREEING namerefMembers in BashObj_setupMethodCallContextDone\n", this->namerefMembers);
+	if (this->namerefMembers)
+		hash_dispose(this->namerefMembers);
 	this->namerefMembers = NULL;
 }
 
@@ -366,41 +365,6 @@ BashObj* BashObj_find(char* name, char* refClass, char* hierarchyLevel)
 	BashObj* pObj = xmalloc(sizeof(BashObj));
 	BashObj_init(pObj, name, refClass, hierarchyLevel);
 	return pObj;
-}
-
-// c implementation of the bash library function
-// returns "heap_A_XXXXXXXXX" where X's are random chars
-// TODO: add support for passing in attributes like the bash version does
-SHELL_VAR* varNewHeapVar(char* attributes)
-{
-	static char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-	int charsetSize = (int) (sizeof(charset) -1);
-
-	int length=16+strlen(attributes);
-	char* buf = xmalloc(length+1);
-	if (!buf)
-		return NULL;
-	strcpy(buf, "heap_");
-	strcat(buf, attributes);
-	strcat(buf, "_");
-
-	for (int n=strlen(buf);n < length;n++) {
-		buf[n] = charset[rand() % charsetSize];
-	}
-
-	buf[length] = '\0';
-
-	SHELL_VAR* retVal;
-
-	if (!attributes || !strcasestr(attributes,"a"))
-		retVal = ShellVar_createGlobal(buf);
-	else if (strstr(attributes, "a"))
-		retVal = ShellVar_arrayCreateGlobal(buf);
-	else
-		retVal = ShellVar_assocCreateGlobal(buf);
-
-	xfree(buf);
-	return retVal;
 }
 
 // this is a convenience function for C code to call ConstructObject which converts the C args to a WORD_LIST
@@ -1230,7 +1194,7 @@ int _bgclassCall(WORD_LIST* list)
 	// at this point the <objRef> components (except the |) have been removed so its a good time to record the _memberExpression
 	// that is used as context in errors. The '|' from the <objRef> may be stuck to the first position so remove that if it is
 	char* _memberExpression = string_list(list);
-//    add_unwind_protect(xfree,_memberExpression);
+	add_unwind_protect(xfree, _memberExpression);
 	char* pStart=_memberExpression;
 	if (*pStart == '|') pStart++;
 	while (pStart && *pStart && whitespace(*pStart)) pStart++;

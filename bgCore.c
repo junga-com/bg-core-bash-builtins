@@ -61,7 +61,7 @@ int bgCore_builtin(WORD_LIST* list)
 
 	char* label = ""; if (!label);
 	bgtrace0(1,"###############################################################################################################\n");
-	bgtrace2(1,"### %d START %s (bgCore)\n", jmpPoints_getPos()+1, label=WordList_toString(list));
+	bgtrace2(1,"### %d START %s (bgCore)\n", callFrames_getPos()+1, label=WordList_toString(list));
 	bgtracePush();
 	if (!list || !list->word) {
 		fprintf(stderr, "Error - <cmd> is a required argument. See usage..\n\n");
@@ -75,13 +75,13 @@ int bgCore_builtin(WORD_LIST* list)
 	// if anything calls assertError(), it will either terminate the PID and the rest of the builtin will not run, or if there is
 	// a Try: / Catch: block in bash that is catching the error, it will longjump back to here and continue to execute the true
 	// condition which will exit back to the parser flow.
-	jmp_buf* pJmpPoint = jmpPoints_push();
-	if (setjmp(*pJmpPoint)) {
+	CallFrame* callFrame = callFrames_push();
+	if (setjmp(callFrame->jmpBuf)) {
 		// assertError() was called .. we just need to end without doing anything so that the bash assertError mechanism can take
 		// over
 		__bgtrace("!!! caught the LONGJMP '%d'\n", bgCoreNestCount);
 		bgtracePop();
-		bgtrace2(1,"### %d END-JMP %s\n", jmpPoints_getPos()+1, label);
+		bgtrace2(1,"### %d END-JMP %s\n", callFrames_getPos()+1, label);
 		ret = (EXECUTION_FAILURE);
 
 	} else {
@@ -289,6 +289,42 @@ int bgCore_builtin(WORD_LIST* list)
 
 			ret = EXECUTION_SUCCESS;
 
+
+		} else if (strcmp("pathGetCommon", list->word->word)==0) {
+			list=list->next;
+			char* retVar = NULL;
+			char* optArg;
+			while (list && (*(list->word->word) == '-' || *(list->word->word) == '+')) {
+				if (strcmp("--",list->word->word)==0) { list=list->next; break; }
+				if ((optArg=BGCheckOpt("-R*|--retVar=*", &list)))
+					retVar = optArg;
+				else assertError(NULL, "invalid option '%s'\n", list->word->word);
+				list = (list) ? list->next : NULL;
+			}
+
+			char* retVal = pathGetCommon(list);
+
+			if (retVar)
+				ShellVar_setS(retVar, retVal);
+			else
+				printf("%s\n", retVal);
+			ret = EXECUTION_SUCCESS;
+
+		// bgCore fsExpandFiles
+		} else if (strcmp("fsExpandFiles", list->word->word)==0) {
+			list = list->next;
+			ret = fsExpandFiles(list);
+
+
+
+		// ### ini ###############################################################################################################
+
+		// bgCore iniParamGet
+		} else if (strcmp("iniParamGet", list->word->word)==0) {
+			list = list->next;
+			ret = iniParamGet(list);
+
+
 		// ### Debugging and tests ##################################################################################################################
 
 		// bgCore ShellContext_dump
@@ -306,28 +342,32 @@ int bgCore_builtin(WORD_LIST* list)
 
 		// bgCore transTest
 		} else if (strcmp("transTest", list->word->word)==0) {
-			printf("START '%s'\n",WordList_toString(list));
 			list = list->next;
-			while (list && *list->word->word=='-') {
-				printf("###ONE\n");
-				char* optArg;
-				char* param = list->word->word;
-				if ((optArg=BGCheckOpt("-f*|--file=*", &list)))
-					printf("   HIT '%s' is '%s'\n", param,optArg);
-				else if ((optArg=BGCheckOpt("-a|--append", &list)))
-					printf("   HIT '%s' is '%s'\n", param,optArg);
-				list = list->next;
+			WORD_LIST* files = expand_words(WordList_fromString("/etc/bg* *.sh", IFS, 0));
+			while (files) {
+				printf("   := '%s'\n", files->word->word);
+				files = files->next;
 			}
-			printf("remainder = '%s'\n",WordList_toString(list));
-			ret = EXECUTION_SUCCESS;
+//			parse_and_execute ("find . > /tmp/cmd.out", "test", SEVAL_NOHIST | SEVAL_NOFREE | SEVAL_NOHISTEXP | SEVAL_NONINT);
+
+//			WORD_LIST* cmdArgs = WordList_unshift(NULL, ".");
+//			cmdArgs = WordList_unshift(cmdArgs, "fsExpandFiles");
+			ret = fsExpandFiles(list);
+
+			// WORD_LIST* cmdArgs = WordList_unshift(NULL, "/tmp/cmd.out");
+			// cmdArgs = WordList_unshift(cmdArgs, ">");
+			// cmdArgs = WordList_unshift(cmdArgs, ".");
+			// cmdArgs = WordList_unshift(cmdArgs, "find");
+			// ShellFunc_executeS(cmdArgs);
+			// ret = EXECUTION_SUCCESS;
 
 		} else {
 			assertError(NULL, "error: command not recognized cmd='%s'\n", (list && list->word)?list->word->word:"");
 		}
 
-		jmpPoints_pop();
+		callFrames_pop();
 		bgtracePop();
-		bgtrace2(1,"### %d END-NORM %s\n\n", jmpPoints_getPos()+1, label);
+		bgtrace2(1,"### %d END-NORM %s\n\n", callFrames_getPos()+1, label);
 	}
 
 	bgCoreNestCount--;
@@ -379,13 +419,13 @@ int import_builtin(WORD_LIST* args)
 
 	char* label = ""; if (!label);
 	bgtrace0(1,"###############################################################################################################\n");
-	bgtrace2(1,"### %d START import %s \n", jmpPoints_getPos()+1, label=WordList_toString(args));
+	bgtrace2(1,"### %d START import %s \n", callFrames_getPos()+1, label=WordList_toString(args));
 	bgtracePush();
 
-	jmp_buf* pJmpPoint = jmpPoints_push();
-	if (setjmp(*pJmpPoint)) {
+	CallFrame* callFrame = callFrames_push();
+	if (setjmp(callFrame->jmpBuf)) {
 		bgtracePop();
-		bgtrace2(1,"### %d END-JMP %s\n", jmpPoints_getPos()+1, label);
+		bgtrace2(1,"### %d END-JMP %s\n", callFrames_getPos()+1, label);
 		ret = (EXECUTION_FAILURE);
 
 	} else {
@@ -421,9 +461,9 @@ int import_builtin(WORD_LIST* args)
 		if (scriptPath) xfree(scriptPath);
 
 
-		 jmpPoints_pop();
+		callFrames_pop();
  		bgtracePop();
- 		bgtrace2(1,"### %d END-NORM import %s\n\n", jmpPoints_getPos()+1, label);
+ 		bgtrace2(1,"### %d END-NORM import %s\n\n", callFrames_getPos()+1, label);
 	}
 
 	return ret;

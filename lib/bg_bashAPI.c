@@ -5,47 +5,67 @@
 
 #include "BGString.h"
 
-jmp_buf* jmpPoints = NULL;
-int jmpPointsAllocSize = 0;
-int jmpPointsPos = 0;
 
-int jmpPoints_getPos()
+
+CallFrame* callFrames = NULL;
+
+int callFramesAllocSize = 0;
+int callFramesPos = 0;
+
+int callFrames_getPos()
 {
-	return jmpPointsPos;
+	return callFramesPos;
 }
 
-jmp_buf* jmpPoints_push()
+CallFrame* callFrames_push()
 {
-	if (jmpPointsAllocSize <= 0) {
-		jmpPointsAllocSize = 10;
-		jmpPoints = xmalloc(jmpPointsAllocSize*sizeof(jmp_buf));
+	if (callFramesAllocSize <= 0) {
+		callFramesAllocSize = 10;
+		callFrames = xmalloc(callFramesAllocSize*sizeof(CallFrame));
 	}
-	if (jmpPointsAllocSize < (jmpPointsPos+1)) {
-		jmpPointsAllocSize = 2*jmpPointsAllocSize;
-		jmpPoints = xrealloc(jmpPoints, jmpPointsAllocSize*sizeof(jmp_buf));
+	if (callFramesAllocSize < (callFramesPos+1)) {
+		callFramesAllocSize = 2*callFramesAllocSize;
+		callFrames = xrealloc(callFrames, callFramesAllocSize*sizeof(CallFrame));
 	}
-	return jmpPoints + jmpPointsPos++;
+	CallFrame* pFrm = &(callFrames[callFramesPos++]);
+	pFrm->name = saprintf("bgCore-%d", callFramesPos-1);
+	begin_unwind_frame(pFrm->name);
+	return pFrm;
 }
-void jmpPoints_pop()
+void callFrames_pop()
 {
-	jmpPointsPos--;
+	if (callFramesPos<=0) {
+		__bgtrace("!!! bgCore BUILTIN logic ERROR. trying to pop the CallFrame (aka jmpPoint) but none on the stack #########################################\n ");
+		exit(205);
+	}
+
+	CallFrame* pFrm = &(callFrames[--callFramesPos]);
+	discard_unwind_frame(pFrm->name);
+	xfree(pFrm->name);
 }
 
-void jmpPoints_longjump(int exitCode)
+void callFrames_longjump(int exitCode)
 {
-	if (jmpPointsPos > 0) {
-		__bgtrace("!!! LONGJMPing at '%d'\n", jmpPointsPos-1);
-		longjmp(jmpPoints[--jmpPointsPos], exitCode);
+	if (callFramesPos > 0) {
+		__bgtrace("!!! LONGJMPing at '%d'\n", callFramesPos-1);
+
+		CallFrame* pFrm = &(callFrames[--callFramesPos]);
+		run_unwind_frame(pFrm->name);
+		xfree(pFrm->name);
+
+		longjmp(pFrm->jmpBuf, exitCode);
 		__bgtrace("!!! WOOPS !!!! jump didnt jump!\n");
 	}
 	__bgtrace("!!! bgCore BUILTIN logic ERROR. trying to jump but none on the stack #########################################\n ");
+	exit(205);
 }
 
 
-// When a builtin function calls assertError, it may or may not return from the assertError call. If the script has a Try/Catch
-// block in the same PID as the builtin is running, then it will return and all the C functions on the stack has to return back up.
-// I wonder if its possible to change this to do a long jump back to the bgCore() function and then unwind the stack using the
-// begin_unwind_frame mechanism.
+// This C function invokes the bash function assertError.  It may or may not return from the assertError bash function call. If the
+// script has a Try/Catch block in the same PID as the builtin is running, then it will return and all the C functions on the stack
+// have end so that the top level builtin function can return. We use setjmp/longjmp to resume at that top level builtin function
+// and the unwind_prot.c module to clean up any resources.
+//
 // If the assertError is not being caught, then our PID will be killed and we do not need to worry b/c it will not return
 // If the assertError is being caught, it will kill any intermediate PIDs and then send the PID with the Try/Catch a SIG2. If this
 // builtin code is running in that PID, the C code will continue to run until it returns and then the SIG2 handler will be called
@@ -73,9 +93,7 @@ int assertError(WORD_LIST* opts, char* fmt, ...)
 
 	WordList_free(args);
 
-	// TODO: implement the run_unwind_frame mechanism
-	// run_unwind_frame("bgAssertError")
-	jmpPoints_longjump(36);
+	callFrames_longjump(36);
 	return 36;
 }
 
@@ -187,10 +205,8 @@ int ShellFunc_executeS(WORD_LIST* args)
 
 	char* exceptionTest = ShellVar_getS("catch_errorCode");
 	if ( exceptionTest && *exceptionTest ) {
-		// TODO: implement the run_unwind_frame mechanism
-		// run_unwind_frame("bgAssertError")
 		__bgtrace("!!! ShellFunc_execute: detected assertError, errorCode='%s' descr='%s'\n",  ShellVar_getS("catch_errorCode"), ShellVar_getS("catch_errorDescription"));
-		jmpPoints_longjump(36);
+		callFrames_longjump(36);
 		return 34;
 	}
 	return ret;
@@ -207,10 +223,8 @@ int ShellFunc_execute(SHELL_VAR* func, WORD_LIST* args)
 	WordList_freeUpTo(&argsWithFN, args);
 	char* exceptionTest = ShellVar_getS("catch_errorCode");
 	if ( exceptionTest && *exceptionTest ) {
-		// TODO: implement the run_unwind_frame mechanism
-		// run_unwind_frame("bgAssertError")
 		__bgtrace("!!! ShellFunc_execute: detected assertError, errorCode='%s' descr='%s'\n",  ShellVar_getS("catch_errorCode"), ShellVar_getS("catch_errorDescription"));
-		jmpPoints_longjump(36);
+		callFrames_longjump(36);
 		return 34;
 	}
 	return ret;
@@ -307,6 +321,36 @@ void WordList_freeUpTo(WORD_LIST** list, WORD_LIST* stop)
 	WordList_free((*list));
 	(*list) = NULL;
 }
+
+
+extern void  WordList_push(WORD_LIST** list, char* word)
+{
+	WORD_LIST* tmp = (*list);
+	while (tmp && tmp->next)
+		tmp = tmp->next;
+	if (tmp)
+		tmp->next = WordList_unshift(NULL, word);
+	else
+		(*list) = WordList_unshift(NULL, word);
+}
+extern char* WordList_pop(WORD_LIST** list)
+{
+	WORD_LIST* tmp = *list;
+	while (tmp && tmp->next && tmp->next->next)
+		tmp = tmp->next;
+	char* ret = NULL;
+	if (!tmp) {
+	 	return ret;
+	} else if (tmp->next) {
+		ret = tmp->next->word->word;
+		WordList_free(tmp->next);
+	} else {
+		ret = (*list)->word->word;
+		WordList_free((*list));
+	}
+	return ret;
+}
+
 
 WORD_LIST* WordList_copy(WORD_LIST* src)
 {
@@ -576,7 +620,7 @@ void outputValue(BGRetVar* retVar, char* value)
 			// we use the assoc array as a set by putting our value(s) in the index and the value of the index can be "" (or anything)
 			ShellVar_assocSet(retVar->var, value, "");
 			break;
-		case rt_echo: break;
+		case rt_echo: break; // this is handled at top , the same as if retVar is null
 		case rt_noop: break;
 	}
 }
@@ -798,4 +842,574 @@ char* ShellVarFlagsToString(int flags) {
 	if (flags&att_tempvar)    BGString_append(&retVal, "tempvar", ",");
 	if (flags&att_propagate)  BGString_append(&retVal, "propagate", ",");
 	return retVal.buf;
+}
+
+// Params:
+//    findStartingPoints : (WORD_LIST*) list of glob expressions to expand
+//    retVar             : (BGRetVar*)  specification for how the results are returned. If NULL, then results are returned as a
+//                                      WORD_LIST* return value of the function. If not null, the function return value will be NULL
+//    fsef_prefixToRemove: (char*)      a glob pattern that will be removed from the start of each returned path. If NULL, paths
+//                                      will be returned as is. e.g. "*/" will remove all folder components of the path leaving only
+//                                      the filename.
+//    flags              : (int)        &'d combination of flags.
+//                                      ef_force           : if no matching files are found, return "/dev/null"
+//                                      ef_recurse         : return matching files in sub folders also
+//                                      ef_filesOnly       : only return matching files
+//                                      ef_foldersOnly     : only return matching folders
+//                                      ef_alreadyExpanded : internal flag used by fsExpandFiles to indicate that findStartingPoints
+//                                                           has already been expanded so not to waste effort doing it again.
+//    findOpts           : (WORD_LIST*) native find options (the real options that must come first on the cmd line)
+//                                      -H|-L|-P|-D*|-O*
+//    findGlobalExpressions:(WORD_LIST*)native find expressions that are global and therefore must come fist in the expression section.
+//                                      -mindepth <n>|-maxdepth <n>|-depth|-d|-ignore_readdir_race|-noignore_readdir_race|-mount|-xdev|-noleaf
+//    findExpressions    : (WORD_LIST*) native find match expressions (to further restrict the returned set of files)
+//    _gitIgnorePath     : (char*)      determines whether the expressions from a .gitignore files are used to exclude the files
+//                                      that git ignores from consideration.
+//                                      NULL : do not exclude the git ignored files
+//                                      "<glean>" : use the .gitignore file if found in the ussual place
+//                                      <pathToGitIgnore> : any other string is interpretted as the path to the .gitignore file to use.
+//    excludePaths       : (WORD_LIST*) a list of files or folders to excude. Can contain glob characters.
+#define ef_force       0x01
+#define ef_recurse     0x02
+#define ef_filesOnly   0x04
+#define ef_foldersOnly 0x08
+#define ef_alreadyExpanded 0x10
+WORD_LIST* fsExpandFilesC(
+	WORD_LIST* findStartingPoints,
+	BGRetVar* retVar,
+	char* fsef_prefixToRemove,
+	int flags,
+	WORD_LIST* findOpts,
+	WORD_LIST* findGlobalExpressions,
+	WORD_LIST* findExpressions,
+	char* _gitIgnorePath,
+	WORD_LIST* excludePaths)
+{
+	int forceFlag   = flags & ef_force;
+	int recurseFlag = flags & ef_recurse;
+
+	WORD_LIST* fTypeOpt = NULL;
+	if (flags&ef_filesOnly) {
+		fTypeOpt = WordList_unshift(fTypeOpt, "f");
+		fTypeOpt = WordList_unshift(fTypeOpt, "-type");
+	} else if (flags&ef_foldersOnly) {
+		fTypeOpt = WordList_unshift(fTypeOpt, "d");
+		fTypeOpt = WordList_unshift(fTypeOpt, "-type");
+	}
+
+	if (!(flags&ef_alreadyExpanded))
+		findStartingPoints = expand_words(findStartingPoints);
+
+	WORD_LIST* recursiveOpt = (recurseFlag) ? NULL : WordList_fromString("-maxdepth 0", IFS,0);
+
+
+	// if the user supplied more than 1 find test expression, it may contain 'or' logic so enclose it in () so that we can treat it
+	// like one and'd filter criteria
+	if (findExpressions && findExpressions->next) {
+		findExpressions = WordList_unshift(findExpressions, "(");
+		WordList_push(&findExpressions, ")");
+	}
+
+	// calculate the commonPrefix which is the the effective root folder of the entire operation
+	char* commonPrefix = NULL;
+	if (_gitIgnorePath || excludePaths) {
+		char* tmp = pathGetCommon(findStartingPoints);
+		if (tmp && *tmp!='\0')
+			commonPrefix = save2string(tmp, "/");
+		xfree(tmp);
+	} else {
+		commonPrefix = savestring("./");
+	}
+
+	// add the gitignore contents to the excludePaths if called for
+	if (_gitIgnorePath) {
+		if (strcmp(_gitIgnorePath, "<glean>"))
+			_gitIgnorePath = save2string(commonPrefix, ".gitignore");
+		else
+			_gitIgnorePath = savestring(_gitIgnorePath);
+		excludePaths = WordList_unshift(excludePaths, ".git");
+		excludePaths = WordList_unshift(excludePaths, ".bglocal");
+		FILE* fGitIgnore = fopen(_gitIgnorePath, "r");
+		if (fGitIgnore) {
+			size_t bufSize = 100;
+			char* buf =  xmalloc(bufSize);
+			while (freadline(fGitIgnore, buf, &bufSize) > -1) {
+				char* pS = buf;
+				while (*pS && whitespace(*pS)) pS++;
+				// skip comments and blank lines
+				if (*pS != '#' && *pS != '\0') {
+					excludePaths = WordList_unshift(excludePaths, pS);
+				}
+			}
+			xfree(buf);
+		}
+		xfree(_gitIgnorePath);
+	}
+
+	// build the findPruneExpr if there are any excludePaths
+	WORD_LIST* findPruneExpr = NULL;
+	if (excludePaths) {
+		WORD_LIST* _folderEntries = NULL;
+		WORD_LIST* _anyEntries = NULL;
+		for (WORD_LIST* excludePath=excludePaths; excludePath; excludePath=excludePath->next) {
+			char* path = savestring(excludePath->word->word);
+			int isDir = 0;
+			char* _expr = "-name"; for (char* t=path; *t; t++) if (*t=='/') { _expr="-path"; break;}
+			if (path-(strrchr(path,'/')) == strlen(path)-1 ) {
+				path[strlen(path)-1] = '\0';
+				isDir=1;
+			}
+			if (path && *path=='/') {
+				char* tstr = path;
+				path=save2string(commonPrefix, tstr);
+				xfree(tstr);
+			}
+			WORD_LIST* pList =( (isDir) ? _folderEntries : _anyEntries);
+			pList = WordList_unshift(pList, path);
+			pList = WordList_unshift(pList, _expr);
+			pList = WordList_unshift(pList, "-o");
+			xfree(path);
+		}
+
+		//    "(" "(" -type d "(" -false "${_folderEntries[@]}" ")" ")" -o  "(" -false "${_anyEntries[@]}" ")"  ")" -prune -o
+		//     (-  (--         (---------------------------------) --)       (------------------------------)   -)
+		findPruneExpr = WordList_join(NULL,             WordList_fromString("( ( -type d ( -false"  ,IFS,0));
+		findPruneExpr = WordList_join(findPruneExpr,    _folderEntries);
+		findPruneExpr = WordList_join(findPruneExpr,    WordList_fromString(") ) -o ( -false"       ,IFS,0));
+		findPruneExpr = WordList_join(findPruneExpr,    _anyEntries);
+		findPruneExpr = WordList_join(findPruneExpr,    WordList_fromString(") ) -prune -o "        ,IFS,0));
+	}
+
+
+	// now compose the arguments to the find cmd and redirecting to a tmpFile
+	char* tmpFilename = "/tmp/bgCore.out";
+	WORD_LIST* findArgs = NULL;
+	findArgs = WordList_join(findArgs, findOpts);
+	findArgs = WordList_join(findArgs, findStartingPoints);
+	findArgs = WordList_join(findArgs, recursiveOpt);
+	findArgs = WordList_join(findArgs, findGlobalExpressions);
+	findArgs = WordList_join(findArgs, findPruneExpr);
+	findArgs = WordList_join(findArgs, fTypeOpt);
+	findArgs = WordList_join(findArgs, findExpressions);
+	//WordList_push(&findArgs, "-print0");
+	WordList_push(&findArgs, ">");
+	WordList_push(&findArgs, tmpFilename);  // TODO: use unique tmp filename
+
+	// execute the cmdline. parse_and_execute will free the cmdline string
+	findArgs = WordList_unshift(findArgs, "find");
+	char* cmdline = WordList_toString(findArgs);
+	parse_and_execute(cmdline, "bgCore", SEVAL_NOHIST | SEVAL_RESETLINE | SEVAL_NOHISTEXP | SEVAL_NONINT);
+
+	// if fsef_prefixToRemove is set, create a tmpVar to have BASH manipulate the value
+	SHELL_VAR* tmpVar = NULL;
+	SHELL_VAR* vPrefixToRemove = NULL;
+	char* prefixCmd = NULL;
+	if (fsef_prefixToRemove) {
+		tmpVar = varNewHeapVar("");
+		vPrefixToRemove = varNewHeapVar("");
+		ShellVar_set(vPrefixToRemove, fsef_prefixToRemove);
+		prefixCmd = saprintf("%s=${%s/#$%s}", tmpVar->name, tmpVar->name, vPrefixToRemove->name);
+	}
+
+	// now read the results from the tmp file
+	FILE* tmpFile = fopen(tmpFilename, "r");
+	size_t bufSize = 100;
+	char* buf =  xmalloc(bufSize);
+	int found = 0;
+	if (retVar)
+		retVar->appendFlag = 1;
+	WORD_LIST* resultList = NULL;
+	while (freadline(tmpFile, buf, &bufSize) > -1) {
+		if (fsef_prefixToRemove) {
+			ShellVar_set(tmpVar, buf);
+			parse_and_execute(prefixCmd, "bgCore", SEVAL_NOFREE | SEVAL_NOHIST | SEVAL_RESETLINE | SEVAL_NOHISTEXP | SEVAL_NONINT);
+			strcpy(buf, ShellVar_get(tmpVar));
+		}
+		if (retVar)
+			outputValue(retVar, buf);
+		else
+			resultList = WordList_unshift(resultList, buf);
+		found = 1;
+	}
+	xfree(buf);
+
+	if (!found && forceFlag)
+		outputValue(retVar, "/dev/null");
+
+	if (retVar)
+		xfree(retVar);
+
+	return resultList;
+}
+
+int fsExpandFiles(WORD_LIST* args)
+{
+	// This cmd, like the gnu find util, has 3 sections of parameters instead of the normal 2 (options + positional)
+	//    Section 1: normal options. ends when '--' or a token without a leading '-' is encountered
+	//    Section 2: starting paths. ends when a token with a leading '-' is encountered.
+	//    Section 3: criteria and action 'script'
+
+	// Section 1: process real options
+	WORD_LIST* recursiveOpt = WordList_fromString("-maxdepth 0",IFS,0);
+	WORD_LIST* fTypeOpt = NULL;
+	int forceFlag = 0;
+	//int findCmdLineCompat = 0;
+	char* fsef_prefixToRemove = NULL;
+	char* _gitIgnorePath = NULL;
+	WORD_LIST* excludePaths = NULL;
+	WORD_LIST* findOpts = NULL;
+	BGRetVar* retVar = BGRetVar_new();
+	while (args && (*(args->word->word) == '-' || *(args->word->word) == '+')) {
+		char* optArg;
+		char* param = args->word->word;
+		if (strcmp("--",args->word->word)==0)
+			{ args=args->next; break; }
+
+		// If any options conflict arise, findCmdLineCompat==true means use the find meaning and findCmdLineCompat==false means use our meaning
+		else if ((optArg=BGCheckOpt("--findCmdLineCompat", &args)))
+			;//findCmdLineCompat = 1;
+
+		else if ((optArg=BGCheckOpt("--force|-f", &args)))
+			forceFlag = 1;
+
+		// aliases for -type d|f
+		else if ((optArg=BGCheckOpt("-F", &args)))
+			{fTypeOpt = WordList_unshift(fTypeOpt, "f"); fTypeOpt = WordList_unshift(fTypeOpt, "-type"); }
+		else if ((optArg=BGCheckOpt("-D|-d", &args)))
+			{fTypeOpt = WordList_unshift(fTypeOpt, "d"); fTypeOpt = WordList_unshift(fTypeOpt, "-type"); }
+
+		// -R means recurse (dont limit the depth) and +R means dont recurse (apply the find criteria only to the supplied paths)
+		else if ((optArg=BGCheckOpt("-R", &args)))
+			{WordList_free(recursiveOpt);}
+		else if ((optArg=BGCheckOpt("+R", &args))) {
+			if (!recursiveOpt)
+				recursiveOpt = WordList_fromString("-maxdepth 0",IFS,0);
+		}
+
+		// modify the output
+		else if ((optArg=BGCheckOpt("--basename|-b", &args)))
+			fsef_prefixToRemove = "*/";
+		else if ((optArg=BGCheckOpt("-B*", &args)))
+			fsef_prefixToRemove = optArg;
+
+		// should we exclude patterns from gitignore?
+		else if ((optArg=BGCheckOpt("--gitignore", &args)))
+			_gitIgnorePath = "<glean>";
+		else if ((optArg=BGCheckOpt("--gitignore*", &args)))
+			_gitIgnorePath = (strcmp(optArg,"")==0) ? "<glean>" : optArg;
+
+		// exclude some results
+		else if ((optArg=BGCheckOpt("--exclude*", &args)))
+			excludePaths = WordList_unshift(excludePaths, optArg);
+
+		// native find (GNU utility) 'real' options (as opposed to find criteria and actions that also start with '-')
+		else if ((optArg=BGCheckOpt("-H|-L|-P", &args)))
+			findOpts = WordList_unshift(findOpts, optArg);
+		else if ((optArg=BGCheckOpt("-D*|-O*", &args)))
+			{findOpts = WordList_unshift(findOpts, optArg);findOpts = WordList_unshift(findOpts, param);}
+
+		// process retVar options (-A <aryRet>|-R <retVar>|-S<setVar>|...)
+		else if ((BGRetVar_initFromOpts(&retVar, &args)))
+			;
+
+		else break; //assertError(NULL, "invalid option '%s'\n", args->word->word);
+		args = (args) ? args->next : NULL;
+	}
+
+	// Section 2: these are the <fileSpec> positional parameters. Bash will expand any wild cards if they match any paths but will
+	// leave them in if they dont match any. We cant pass any non existing paths to find or it will fail with an error. find will
+	// interpret each of these as a starting point but if +R is specified, we will give find the -maxdepth 0 global option that
+	// will cause it to only apply the test expressions to the starting points and do no directory traversal.
+	WORD_LIST* findStartingPoints = NULL;
+	while (args && (*(args->word->word) != '-' && *(args->word->word) != '(')) {
+		if (fsExists(args->word->word))
+			findStartingPoints = WordList_unshift(findStartingPoints, args->word->word);
+		args = (args) ? args->next : NULL;
+	}
+	findStartingPoints = WordList_reverse(findStartingPoints);
+//	REVERSE_LIST(findStartingPoints, WORD_LIST*);
+
+	// if none of the starting points exist this invocation will match nothing, but there is nothing we can set findStartingPoints
+	// to so that find would exit cleanly without displaying an error so we return here
+	if (!findStartingPoints) {
+		if (forceFlag)
+			outputValue(retVar, "/dev/null");
+		if (retVar)
+			xfree(retVar);
+		return 1;
+	}
+
+
+
+
+	// Section3: /bin/find expressions section. The rest of the command line is interpretted as the find expression
+	WORD_LIST* findGlobalExpressions = NULL;
+	WORD_LIST* findExpressions = NULL;
+	while (args) {
+		char* optArg;
+		char* param = args->word->word;
+
+		// 'global options'
+		if ((optArg=BGCheckOpt("-maxdepth|-mindepth", &args))) {
+			WordList_free(recursiveOpt);
+			findGlobalExpressions = WordList_unshift(findGlobalExpressions, args->word->word);
+			args = (args) ? args->next : NULL;
+			if (!args)
+				assertError(NULL, "-maxdepth|-mindepth must be followed by a value on the command line to fsExpandFiles");
+			findGlobalExpressions = WordList_unshift(findGlobalExpressions, args->word->word);
+		}
+		else if ((optArg=BGCheckOpt("-depth|-d|-ignore_readdir_race|-noignore_readdir_race|-mount|-xdev|-noleaf", &args)))
+			findGlobalExpressions = WordList_unshift(findGlobalExpressions, args->word->word);
+		else if ((optArg=BGCheckOpt("-help|-version", &args))) {
+			assertError(NULL, "This global 'find' expression is not supported by fsExpandFiles (%s)", param);
+		}
+
+		// actions. most actions are not supported b/c we are all about the returned list (-quit is alright though)
+		else if ((optArg=BGCheckOpt("-delete|-exec|-execdir|-fls|-fprint|-fprint0|-fprintf|-ls|-ok|-okdir|-print|-print0|-printf", &args)))
+			assertError(NULL, "Action 'find' options are not allowed by fsExpandFiles. ($1)" );
+
+		else if ((optArg=BGCheckOpt("-prune", &args))) {
+			if (fTypeOpt)
+			 	assertError(NULL, "-prune can not be used with either the -D (directories only) or -F (files only) options. You can however use -type d|f in your expression with -prune ");
+			findExpressions = WordList_unshift(findExpressions, args->word->word);
+		}
+
+		// assume any other is a valid test expression, operator or positional option. If not, find will fail
+		findExpressions = WordList_unshift(findExpressions, args->word->word);
+
+		args = (args) ? args->next : NULL;
+	}
+	WordList_reverse(findGlobalExpressions);
+	WordList_reverse(findExpressions);
+
+	////////////////////////////////////////////////////////////////////////////////////
+
+
+
+	// fsExpandFilesC(
+	// 	findStartingPoints,
+	// 	retVar,
+	// 	fsef_prefixToRemove,
+	// 	,
+	// 	WORD_LIST* findOpts,
+	// 	WORD_LIST* findGlobalExpressions,
+	// 	WORD_LIST* findExpressions,
+	// 	char* _gitIgnorePath,
+	// 	WORD_LIST* excludePaths)
+
+	// if the user supplied more than 1 find test expression, it may contain 'or' logic so enclose it in () so that we can treat it
+	// like one and'd filter criteria
+	if (findExpressions && findExpressions->next) {
+		findExpressions = WordList_unshift(findExpressions, "(");
+		WordList_push(&findExpressions, ")");
+	}
+
+	// calculate the commonPrefix which is the the effective root folder of the entire operation
+	char* commonPrefix = NULL;
+	if (_gitIgnorePath || excludePaths) {
+		char* tmp = pathGetCommon(findStartingPoints);
+		if (tmp && *tmp!='\0')
+			commonPrefix = save2string(tmp, "/");
+		xfree(tmp);
+	} else {
+		commonPrefix = savestring("./");
+	}
+
+	// add the gitignore contents to the excludePaths if called for
+	if (_gitIgnorePath) {
+		if (strcmp(_gitIgnorePath, "<glean>"))
+			_gitIgnorePath = save2string(commonPrefix, ".gitignore");
+		else
+			_gitIgnorePath = savestring(_gitIgnorePath);
+		excludePaths = WordList_unshift(excludePaths, ".git");
+		excludePaths = WordList_unshift(excludePaths, ".bglocal");
+		FILE* fGitIgnore = fopen(_gitIgnorePath, "r");
+		if (fGitIgnore) {
+			size_t bufSize = 100;
+			char* buf =  xmalloc(bufSize);
+			while (freadline(fGitIgnore, buf, &bufSize) > -1) {
+				char* pS = buf;
+				while (*pS && whitespace(*pS)) pS++;
+				// skip comments and blank lines
+				if (*pS != '#' && *pS != '\0') {
+					excludePaths = WordList_unshift(excludePaths, pS);
+				}
+			}
+			xfree(buf);
+		}
+		xfree(_gitIgnorePath);
+	}
+
+	// build the findPruneExpr if there are any excludePaths
+	WORD_LIST* findPruneExpr = NULL;
+	if (excludePaths) {
+		WORD_LIST* _folderEntries = NULL;
+		WORD_LIST* _anyEntries = NULL;
+		for (WORD_LIST* excludePath=excludePaths; excludePath; excludePath=excludePath->next) {
+			char* path = savestring(excludePath->word->word);
+			int isDir = 0;
+			char* _expr = "-name"; for (char* t=path; *t; t++) if (*t=='/') { _expr="-path"; break;}
+			if (path-(strrchr(path,'/')) == strlen(path)-1 ) {
+				path[strlen(path)-1] = '\0';
+				isDir=1;
+			}
+			if (path && *path=='/') {
+				char* tstr = path;
+				path=save2string(commonPrefix, tstr);
+				xfree(tstr);
+			}
+			WORD_LIST* pList =( (isDir) ? _folderEntries : _anyEntries);
+			pList = WordList_unshift(pList, path);
+			pList = WordList_unshift(pList, _expr);
+			pList = WordList_unshift(pList, "-o");
+			xfree(path);
+		}
+
+		//    "(" "(" -type d "(" -false "${_folderEntries[@]}" ")" ")" -o  "(" -false "${_anyEntries[@]}" ")"  ")" -prune -o
+		//     (-  (--         (---------------------------------) --)       (------------------------------)   -)
+		findPruneExpr = WordList_join(NULL,             WordList_fromString("( ( -type d ( -false"  ,IFS,0));
+		findPruneExpr = WordList_join(findPruneExpr,    _folderEntries);
+		findPruneExpr = WordList_join(findPruneExpr,    WordList_fromString(") ) -o ( -false"       ,IFS,0));
+		findPruneExpr = WordList_join(findPruneExpr,    _anyEntries);
+		findPruneExpr = WordList_join(findPruneExpr,    WordList_fromString(") ) -prune -o "        ,IFS,0));
+	}
+
+
+	// now compose the arguments to the find cmd and redirecting to a tmpFile
+	char* tmpFilename = "/tmp/bgCore.out";
+	WORD_LIST* findArgs = NULL;
+	findArgs = WordList_join(findArgs, findOpts);
+	findArgs = WordList_join(findArgs, findStartingPoints);
+	findArgs = WordList_join(findArgs, recursiveOpt);
+	findArgs = WordList_join(findArgs, findGlobalExpressions);
+	findArgs = WordList_join(findArgs, findPruneExpr);
+	findArgs = WordList_join(findArgs, fTypeOpt);
+	findArgs = WordList_join(findArgs, findExpressions);
+	//WordList_push(&findArgs, "-print0");
+	WordList_push(&findArgs, ">");
+	WordList_push(&findArgs, tmpFilename);  // TODO: use unique tmp filename
+
+	// execute the cmdline. parse_and_execute will free the cmdline string
+	findArgs = WordList_unshift(findArgs, "find");
+	char* cmdline = WordList_toString(findArgs);
+	parse_and_execute(cmdline, "bgCore", SEVAL_NOHIST | SEVAL_RESETLINE | SEVAL_NOHISTEXP | SEVAL_NONINT);
+
+	// if fsef_prefixToRemove is set, create a tmpVar to have BASH manipulate the value
+	SHELL_VAR* tmpVar = NULL;
+	SHELL_VAR* vPrefixToRemove = NULL;
+	char* prefixCmd = NULL;
+	if (fsef_prefixToRemove) {
+		tmpVar = varNewHeapVar("");
+		vPrefixToRemove = varNewHeapVar("");
+		ShellVar_set(vPrefixToRemove, fsef_prefixToRemove);
+		prefixCmd = saprintf("%s=${%s/#$%s}", tmpVar->name, tmpVar->name, vPrefixToRemove->name);
+	}
+
+	// now read the results from the tmp file
+	FILE* tmpFile = fopen(tmpFilename, "r");
+	size_t bufSize = 100;
+	char* buf =  xmalloc(bufSize);
+	int found = 0;
+	retVar->appendFlag = 1;
+	while (freadline(tmpFile, buf, &bufSize) > -1) {
+		if (fsef_prefixToRemove) {
+			ShellVar_set(tmpVar, buf);
+			parse_and_execute(prefixCmd, "bgCore", SEVAL_NOFREE | SEVAL_NOHIST | SEVAL_RESETLINE | SEVAL_NOHISTEXP | SEVAL_NONINT);
+			strcpy(buf, ShellVar_get(tmpVar));
+		}
+		outputValue(retVar, buf);
+		found = 1;
+	}
+	xfree(buf);
+
+	if (!found && forceFlag)
+		outputValue(retVar, "/dev/null");
+
+	if (retVar)
+		xfree(retVar);
+
+	return (found) ? EXECUTION_SUCCESS : EXECUTION_FAILURE;
+}
+
+
+
+// usage: pathGetCommon <path1> <path2>
+// compare the two paths from left to right and return the prefix that is common to both.
+// put another way, it returns the folder with the longest path that is a parent of both paths
+// Example:
+//    p1 = /var/lib/foo/data
+//    p2 = /var/lib/bar/five/fee
+//   out = /var/lib/
+char* pathGetCommon(WORD_LIST* paths)
+{
+	if (!paths)
+		return savestring("");
+
+	// init prefix with the first path. We assume that the last component of the path is a folder even if there is no trailing '/'
+	// if it is, infact a filename, it will be removed unless all paths are equal to that filename path which is not valid input.
+	char* prefix = savestring(paths->word->word);
+	int prefixLen = strlen(prefix);
+	while (prefixLen>0 && prefix[prefixLen-1] == '/') prefixLen--;
+
+	// now iterate over the rest of the pathes, each time shortening prefix if needed until its empty or matches some part of path
+	for (WORD_LIST* tmp=paths->next; prefixLen>0 && tmp; tmp=tmp->next) {
+		char* tword = tmp->word->word;
+		int tlen = strlen(tword);
+
+		while (prefixLen>0 && (strncmp(tword, prefix, prefixLen)!=0  || (prefixLen!=tlen && tword[prefixLen] != '/'))) {
+			while (prefixLen>0 && prefix[prefixLen-1] != '/') prefixLen--; // move to the first / moving backwards
+			while (prefixLen>0 && prefix[prefixLen-1] == '/') prefixLen--; // move off the '/' or '//'
+		}
+	}
+
+	// the only time this function returns prefix with a trailing '/' is if all pathes are absolute but have no other common path.
+	if (prefixLen==0) {
+		int allAbs = 1;
+		for (WORD_LIST* tmp=paths; allAbs && tmp; tmp=tmp->next)
+			if (*(tmp->word->word)!='/')
+				allAbs = 0;
+		if (allAbs) {
+			prefixLen++;
+		}
+	}
+
+	prefix[prefixLen] = '\0';
+
+	return prefix;
+}
+
+
+// c implementation of the bash library function
+// returns a new global SHELL_VAR with a randon name like "heap_A_XXXXXXXXX" where X's are random chars
+// The new var is given the attributes specified in <attributes>
+SHELL_VAR* varNewHeapVar(char* attributes)
+{
+	static char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	int charsetSize = (int) (sizeof(charset) -1);
+
+	int length=16+strlen(attributes);
+	char* buf = xmalloc(length+1);
+	if (!buf)
+		return NULL;
+	strcpy(buf, "heap_");
+	strcat(buf, attributes);
+	strcat(buf, "_");
+
+	for (int n=strlen(buf);n < length;n++) {
+		buf[n] = charset[rand() % charsetSize];
+	}
+
+	buf[length] = '\0';
+
+	SHELL_VAR* retVal;
+
+	if (!attributes || !strcasestr(attributes,"a"))
+		retVal = ShellVar_createGlobal(buf);
+	else if (strstr(attributes, "a"))
+		retVal = ShellVar_arrayCreateGlobal(buf);
+	else
+		retVal = ShellVar_assocCreateGlobal(buf);
+
+	xfree(buf);
+	return retVal;
 }

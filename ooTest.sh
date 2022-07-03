@@ -1,10 +1,35 @@
 #!/usr/bin/env bash
 source /usr/lib/bg_core.sh
+
+#bgCore transTest
+bgCore fsExpandFiles "$@"
+exit
+
+
+function iniTest()
+{
+	bgtimerStart
+#	bgCore transTest "$@"
+	bgtimerLapPrint "c impl"
+	iniParamGet "$@"
+	bgtimerLapPrint "bash impl"
+}
+iniTest "$@"
+exit
+
 function static::Object::testFoo()
 {
 	echo "static be stylin"
 }
 import bg_objects.sh  ;$L1;$L2
+Try:
+	declare -n obj; ConstructObject Object obj
+	_bgclassCall obj Object 0 :.toString
+Catch: && {
+	echo "caught it"
+	PrintEception
+}
+exit
 
 
 function ut_()
