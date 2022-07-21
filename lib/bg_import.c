@@ -35,9 +35,9 @@ int importManifestCriteria(ManifestRecord* rec, ManifestRecord* target)
 			rec_pathWOFolders = t+1;
 
 	int matched = 0;
-	if (strncmp(rec->assetType, "lib.script.bash", 15)==0 && (strcmp(rec->assetName,target_assetNameWOExt)==0 || strcmp(rec->assetName,target_assetName)==0) )
+	if (bgstrncmp(rec->assetType, "lib.script.bash", 15)==0 && (bgstrcmp(rec->assetName,target_assetNameWOExt)==0 || bgstrcmp(rec->assetName,target_assetName)==0) )
 		matched = 1;
-	if (!matched && strcmp(rec_pathWOFolders,target_assetName)==0 && (strncmp(rec->assetType, "plugin", 15)==0 || strncmp(rec->assetType, "unitTest", 15)==0))
+	if (!matched && bgstrcmp(rec_pathWOFolders,target_assetName)==0 && (bgstrncmp(rec->assetType, "plugin", 15)==0 || bgstrncmp(rec->assetType, "unitTest", 15)==0))
 		matched = 1;
 	xfree(target_assetNameWOExt);
 	return matched;

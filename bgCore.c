@@ -10,6 +10,7 @@
 #include "bg_json.h"
 #include "bg_manifest.h"
 #include "bg_import.h"
+#include "bg_templates.h"
 
 
 char* bgOptionGetOpt(WORD_LIST** args)
@@ -71,6 +72,8 @@ int bgCore_builtin(WORD_LIST* list)
 		bgCoreNestCount--;
 		return (EX_USAGE);
 	}
+
+	assertError_init();
 
 	// if anything calls assertError(), it will either terminate the PID and the rest of the builtin will not run, or if there is
 	// a Try: / Catch: block in bash that is catching the error, it will longjump back to here and continue to execute the true
@@ -194,7 +197,7 @@ int bgCore_builtin(WORD_LIST* list)
 
 
 		// bgCore varOutput
-		} else if (strcmp("varOutput", list->word->word)==0) {
+		} else if (strcmp("varOutput", list->word->word)==0 || strcmp("outputValue", list->word->word)==0) {
 			list=list->next;
 			BGRetVar* retVar = BGRetVar_new();
 			while (list && (*(list->word->word) == '-' || *(list->word->word) == '+')) {
@@ -315,6 +318,10 @@ int bgCore_builtin(WORD_LIST* list)
 			list = list->next;
 			ret = fsExpandFiles(list);
 
+		// bgCore templateExpandStr
+		} else if (strcmp("templateExpandStr", list->word->word)==0) {
+			list = list->next;
+			ret = templateExpandStr(list);
 
 
 		// ### ini ###############################################################################################################
@@ -323,6 +330,11 @@ int bgCore_builtin(WORD_LIST* list)
 		} else if (strcmp("iniParamGet", list->word->word)==0) {
 			list = list->next;
 			ret = iniParamGet(list);
+
+		// bgCore iniParamSet
+		} else if (strcmp("iniParamSet", list->word->word)==0) {
+			list = list->next;
+			ret = iniParamSet(list);
 
 
 		// ### Debugging and tests ##################################################################################################################
@@ -337,17 +349,30 @@ int bgCore_builtin(WORD_LIST* list)
 
 		// bgCore testAssertError
 		} else if (strcmp("testAssertError", list->word->word)==0) {
+			char* foo = NULL;
+			if (*foo=='\0') printf("hoots\n");
 			testAssertError(list->next);
 			ret = EXECUTION_SUCCESS;
 
 		// bgCore transTest
 		} else if (strcmp("transTest", list->word->word)==0) {
 			list = list->next;
-			WORD_LIST* files = expand_words(WordList_fromString("/etc/bg* *.sh", IFS, 0));
-			while (files) {
-				printf("   := '%s'\n", files->word->word);
-				files = files->next;
-			}
+
+			// WORD_LIST* files = expand_words(WordList_fromString("/etc/bg* *.sh", IFS, 0));
+			// while (files) {
+			// 	printf("   := '%s'\n", files->word->word);
+			// 	files = files->next;
+			// }
+
+			WORD_LIST* cmdLine = WordList_fromString("find man7 .bglocal/funcman ( ( -type d ( -false ) ) -o ( -false ) ) -prune -o ( -type f -path *man*/*.[1-9]* ) > /tmp/bgCore.out", IFS,0);
+			printf("cmdLine = %s\n", WordList_toString(cmdLine));
+			for (WORD_LIST* l=cmdLine; l; l=l->next)
+				l->word->flags |= W_DQUOTE;
+			printf("cmdLine = %s\n", WordList_toString(cmdLine));
+			for (WORD_LIST* l=cmdLine; l; l=l->next)
+				l->word->flags |= W_QUOTED;
+			printf("cmdLine = %s\n", WordList_toString(cmdLine));
+			parse_and_execute (WordList_toString(cmdLine), "test", SEVAL_NOHIST | SEVAL_NOFREE | SEVAL_NOHISTEXP | SEVAL_NONINT);
 //			parse_and_execute ("find . > /tmp/cmd.out", "test", SEVAL_NOHIST | SEVAL_NOFREE | SEVAL_NOHISTEXP | SEVAL_NONINT);
 
 //			WORD_LIST* cmdArgs = WordList_unshift(NULL, ".");
@@ -371,6 +396,7 @@ int bgCore_builtin(WORD_LIST* list)
 	}
 
 	bgCoreNestCount--;
+	assertError_done();
 	return ret;
 }
 
@@ -380,6 +406,7 @@ int bgCore_builtin(WORD_LIST* list)
 int bgCore_builtin_load (char* name)
 {
 	bgtraceOn();
+	assertError_init();
 	_bgtrace(1,"LOAD ############################################################################################\n");
 	return (1);
 }

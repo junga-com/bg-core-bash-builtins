@@ -3,6 +3,7 @@
 #define _BGString_H_
 
 #include <stdarg.h>
+#include <stdio.h>
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // BGString
@@ -12,7 +13,7 @@
 typedef struct {
 	char* buf;
 	int len;
-	int allocatedLen;
+	size_t allocatedLen;
 	char* itr;
 } BGString;
 
@@ -20,6 +21,10 @@ extern void BGString_init(BGString* pStr, int allocatedLen);
 extern void BGString_initFromStr(BGString* pStr, char* s);
 extern void BGString_initFromAllocatedStr(BGString* pStr, char* s);
 extern void BGString_free(BGString* pStr);
+
+extern int  BGString_readln(BGString* pStr, FILE* fd);
+extern int  BGString_writeln(BGString* pStr, FILE* fd);
+
 extern void BGString_appendf( BGString* pStr, char* separator, char* fmt, ...);
 extern void BGString_appendfv(BGString* pStr, char* separator, char* fmt, va_list args);
 extern void BGString_appendn(BGString* pStr, char* s, int sLen, char* separator);

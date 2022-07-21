@@ -1,20 +1,56 @@
 #!/usr/bin/env bash
 source /usr/lib/bg_core.sh
 
-#bgCore transTest
-bgCore fsExpandFiles "$@"
-exit
+bgCore testAssertError
+
+# echo wasup
+# import bg_objects.sh ;$L1;$L2
+# declare -n proj
+# ConstructObject Project proj /home/bobg/github/bg-CreateCommonSandbox/bg-pkgrepo-deb/
+# #ConstructObject Project proj
+# $proj.toString
+# echo hey there
+# exit
 
 
-function iniTest()
+function manifestTest()
 {
-	bgtimerStart
-#	bgCore transTest "$@"
-	bgtimerLapPrint "c impl"
-	iniParamGet "$@"
-	bgtimerLapPrint "bash impl"
+	bgCore manifestGet "$@"
 }
-iniTest "$@"
+# manifestTest "$@"
+# exit
+
+function namerefTest()
+{
+	local aVar
+	local -n bVar="$1"
+	bVar=(one two three)
+	declare -p aVar bVar
+}
+# declare -a aVar; namerefTest "aVar"; printfVars aVar "" ""
+# declare -a bVar; namerefTest "bVar"; printfVars bVar "" ""
+# declare -a cVar; namerefTest "cVar"; printfVars cVar "" ""
+# exit
+
+# bgCore transTest
+# exit
+
+# declare -a iniFiles=(one)
+# fsExpandFiles -f -A iniFiles foo/goo /etc/bgsys.conf -true -true
+# printfVars iniFiles
+# exit
+
+
+function builtinTest()
+{
+	import bg_template.sh ;$L1;$L2
+	bgtimerStart
+	bgCore  "$@"
+	# bgtimerLapPrint "c impl"
+	# "$@"
+	# bgtimerLapPrint "bash impl"
+}
+builtinTest "$@"
 exit
 
 function static::Object::testFoo()

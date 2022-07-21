@@ -39,11 +39,11 @@ ManifestRecord* ManifestRecord_newFromLine(char* line)
 }
 ManifestRecord* ManifestRecord_save(ManifestRecord* dst, ManifestRecord* src)
 {
-	dst->line      = savestring(src->line);
-	dst->pkgName   = savestring(src->pkgName);
-	dst->assetType = savestring(src->assetType);
-	dst->assetName = savestring(src->assetName);
-	dst->assetPath = savestring(src->assetPath);
+	dst->line      = savestring((src->line)?src->line:"");
+	dst->pkgName   = savestring((src->pkgName)?src->pkgName:"");
+	dst->assetType = savestring((src->assetType)?src->assetType:"");
+	dst->assetName = savestring((src->assetName)?src->assetName:"");
+	dst->assetPath = savestring((src->assetPath)?src->assetPath:"");
 	dst->alloced = 1;
 	return dst;
 }
@@ -95,6 +95,7 @@ char* manifestExpandOutStr(ManifestRecord* rec, char* outputStr)
 // criteria or one with all null fields if no record matches.
 ManifestRecord manifestGet(char* manFile, char* outputStr, ManifestRecord* target, ManifestFilterFn filterFn)
 {
+//fprintf(stderr, "\n!!! starting manifestGet(%s, %s, (\n\tline:'%s'\n\tpkg:'%s'\n\ttype:'%s'\n\tname:'%s'\n\tpath:'%s'\n))\n", manFile, outputStr, target->line,target->pkgName,target->assetType,target->assetName,target->assetPath);
 	ManifestRecord retVal; ManifestRecord_assign(&retVal, NULL,NULL,NULL,NULL);
 
 	// if the caller did not specify any filters, we interpret it as there can not be any match.
@@ -115,7 +116,7 @@ ManifestRecord manifestGet(char* manFile, char* outputStr, ManifestRecord* targe
 	char* buf =  xmalloc(bufSize);
 	ManifestRecord rec;    ManifestRecord_assign(&rec,    NULL,NULL,NULL,NULL);
 	BGString parser; BGString_init(&parser, 500);
-	while (freadline(manFileFD, buf, &bufSize) > -1) {
+	while (freadline(manFileFD, &buf, &bufSize) > -1) {
 		rec.line = buf;
 
 		// make a copy of buf in parser which modifies and consumes it.

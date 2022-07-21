@@ -67,6 +67,8 @@ extern int callFrames_getPos();
 extern int assertError(WORD_LIST* opts, char* fmt, ...);
 extern void bgWarn(char* fmt, ...);
 
+extern void assertError_init();
+extern void assertError_done();
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -167,6 +169,8 @@ extern void  WordList_shiftFree( WORD_LIST** list, int count);
 extern void  WordList_freeUpTo(  WORD_LIST** list, WORD_LIST* stop);
 #define      WordList_unshift(   list, word)    make_word_list(make_word(word), list)
 
+extern WORD_LIST* WordList_unshiftQ(WORD_LIST* list, char* word);
+
 extern void  WordList_push(     WORD_LIST** list, char* word);
 extern char* WordList_pop(      WORD_LIST** list);
 
@@ -229,6 +233,7 @@ extern void      BGRetVar_init(BGRetVar* retVar);
 extern void      BGRetVar_initFromVarname(BGRetVar* retVar, char* varname);
 extern BGRetVar* BGRetVar_new();
 extern int       BGRetVar_initFromOpts(BGRetVar** retVar, WORD_LIST** pArgs);
+extern void      BGRetVar_startOutput(BGRetVar* retVar);
 extern void      outputValue(BGRetVar* retVar, char* value);
 extern void      outputValues(BGRetVar* retVar, WORD_LIST* values);
 
@@ -241,7 +246,31 @@ extern char* BGCheckOpt(char* spec, WORD_LIST** pArgs);
 
 extern int fsExpandFiles(WORD_LIST* args);
 
+#define ef_force       0x01
+#define ef_recurse     0x02
+#define ef_filesOnly   0x04
+#define ef_foldersOnly 0x08
+#define ef_alreadyExpanded 0x10
+
+extern WORD_LIST* fsExpandFilesC(
+	WORD_LIST* findStartingPoints,
+	BGRetVar* retVar,
+	char* fsef_prefixToRemove,
+	int flags,
+	WORD_LIST* findOpts,
+	WORD_LIST* findGlobalExpressions,
+	WORD_LIST* findExpressions,
+	char* _gitIgnorePath,
+	WORD_LIST* excludePaths,
+	int* pFound);
+
 extern char* pathGetCommon(WORD_LIST* paths);
+
+#define rid_removeSrc 0x01
+#define rid_mkdir     0x02
+
+extern int fsReplaceIfDifferent(char* srcFilename, char* destFilename, int flags);
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Debugging

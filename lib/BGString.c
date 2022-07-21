@@ -13,10 +13,10 @@ void BGString_init(BGString* pStr, int allocatedLen)
 }
 void BGString_initFromStr(BGString* pStr, char* s)
 {
-	pStr->len=strlen(s);
+	pStr->len=bgstrlen(s);
 	pStr->allocatedLen=pStr->len+1;
 	pStr->buf=xmalloc(pStr->allocatedLen);
-	strcpy(pStr->buf, s);
+	strcpy(bgstr(pStr->buf), s);
 	pStr->itr=NULL;
 }
 void BGString_initFromAllocatedStr(BGString* pStr, char* s)
@@ -52,6 +52,32 @@ void BGString_free(BGString* pStr)
 		pStr->itr=NULL;
 	}
 }
+
+int BGString_readln(BGString* pStr, FILE* fd)
+{
+	int readResult = freadline(fd, &(pStr->buf), &(pStr->allocatedLen));
+	if (readResult>=0) {
+		pStr->len = readResult;
+		return 1;
+	} else {
+		pStr->len = 0;
+		return 0;
+	}
+}
+
+int BGString_writeln(BGString* pStr, FILE* fd)
+{
+	int bytesWritten = 0;
+	if (pStr->len>0) {
+		pStr->buf[pStr->len] = '\n';
+		bytesWritten = fwrite(pStr->buf, 1, pStr->len+1, fd);
+		pStr->buf[pStr->len] = '\0';
+	} else {
+		bytesWritten = fwrite("\n", 1, 1, fd);
+	}
+	return bytesWritten;
+}
+
 
 void BGString_appendf(BGString* pStr, char* separator, char* fmt, ...)
 {

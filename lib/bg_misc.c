@@ -5,6 +5,9 @@
 #include <regex.h>
 #include <sys/stat.h>
 
+#define _GNU_SOURCE 1
+#include <string.h>
+
 #include "bg_bashAPI.h"
 
 
@@ -64,6 +67,23 @@ char* save4string(char* s1, char* s2, char* s3, char* s4)
 	return p;
 }
 
+char* resaveWithQuotes(char* s1, int reallocFlag)
+{
+	int s1Len = strlen(s1);
+	if (reallocFlag) {
+		s1 = xrealloc(s1, s1Len + 3);
+		memmove(s1+1, s1, s1Len);
+	} else {
+		char* tmp = s1;
+		s1 = xmalloc(s1Len + 3);
+		strcpy(s1+1, tmp);
+	}
+	s1[0] = '\'';
+	s1[s1Len+1] = '\'';
+	s1[s1Len+2] = '\0';
+	return s1;
+}
+
 
 char* bgMakeAnchoredRegEx(char* expr)
 {
@@ -85,22 +105,31 @@ char* bgMakeAnchoredRegEx(char* expr)
 // <buf> should be allocated with a malloc or equivalent function and pBufAllocSize contain the size of the
 // allocation. If <buf> is not large enough to hold the entire line, xremalloc will be used to increase its
 // size and pBufAllocSize will be updated to reflect the new allocation size.
-ssize_t freadline(FILE* file, char* buf, size_t* pBufAllocSize)
+ssize_t freadline(FILE* file, char** pBuf, size_t* pBufAllocSize)
 {
-	buf[0]='\0';
-	char* readResult = fgets(buf, *pBufAllocSize,file);
+	if (!pBuf || !pBufAllocSize)
+		assertError(NULL, "freadline C function called with null value for either <pBuf> or <pBufAllocSize>");
+	if (*pBuf==NULL || (*pBufAllocSize == 0)) {
+		*pBufAllocSize = 100;
+		*pBuf = xmalloc(*pBufAllocSize);
+	}
+
+	(*pBuf)[0]='\0';
+	if (!file)
+		return -1;
+	char* readResult = fgets(*pBuf, *pBufAllocSize,file);
 	if (!readResult)
 		return -1;
-	size_t readLen = strlen(buf);
-	while (readResult && (buf[readLen-1] != '\n')) {
+	size_t readLen = strlen(*pBuf);
+	while (readResult && ((*pBuf)[readLen-1] != '\n')) {
 		*pBufAllocSize *= 2;
-		buf = xrealloc(buf, *pBufAllocSize);
+		*pBuf = xrealloc(*pBuf, *pBufAllocSize);
 
-		readResult = fgets(buf+readLen, *pBufAllocSize/2,file);
-		readLen = strlen(buf+readLen)+readLen;
+		readResult = fgets((*pBuf)+readLen, *pBufAllocSize/2,file);
+		readLen = strlen((*pBuf)+readLen)+readLen;
 	}
-	if (readLen>0 && buf[readLen-1] == '\n') {
-		buf[readLen-1] = '\0';
+	if (readLen>0 && (*pBuf)[readLen-1] == '\n') {
+		(*pBuf)[readLen-1] = '\0';
 		readLen--;
 	}
 	return readLen;
@@ -205,4 +234,36 @@ char* saprintf(char* fmt, ...)
 			assertError(NULL, "logic error. allocSize should have been large enough but something went wrong.\n");
 	}
 	return buf;
+}
+
+
+char* mktempC(char* template)
+{
+	char* fn = savestring((template)?template:"/tmp/tmp.XXXXXXXXXX");
+	char* pS = strchr(fn, 'X');
+	if (!pS) pS=fn; // strchrnull is not available. in this case it can be the start fn b/c *fn != 'X'
+
+	char* pE = pS;
+	while (*pE=='X') pE++;
+
+	int randoCount = (pE - pS);
+
+	if (randoCount<3) {
+		xfree(fn);
+		assertError(NULL,"template passed to mktemp must contain at least 3 'X'. template='%s'", template);
+	}
+
+	static char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	int charsetSize = (int) (sizeof(charset) -1);
+
+	FILE* urandFD = fopen("/dev/urandom","r");
+	fread(pS, 1,randoCount, urandFD);
+	for (int n=0;n < randoCount;n++,pS++) {
+		//__bgtrace("  rand='%d' [%d] -> '%c'\n",*pS, abs(*pS) % charsetSize, charset[abs(*pS) % charsetSize]);
+		*pS = charset[abs(*pS) % charsetSize];
+	}
+	fclose(urandFD);
+
+	//__bgtrace("mktempC='%s'\n", fn);
+	return fn;
 }
