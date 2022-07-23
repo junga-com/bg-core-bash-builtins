@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 source /usr/lib/bg_core.sh
 
-bgCore testAssertError
+#bgCore testAssertError
 
 # echo wasup
 # import bg_objects.sh ;$L1;$L2
@@ -63,7 +63,7 @@ Try:
 	_bgclassCall obj Object 0 :.toString
 Catch: && {
 	echo "caught it"
-	PrintEception
+	PrintException
 }
 exit
 

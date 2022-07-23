@@ -21,7 +21,6 @@ extern char*   bgMakeAnchoredRegEx(char* expr);
 extern ssize_t freadline(FILE* file, char** pBuf, size_t* pBufAllocSize);
 extern int     matchFilter(char* filter, char* value);
 extern void    hexDump(char *desc, void *addr, int len);
-extern int     fsExists(const char* file);
 
 // 'sa' stands for allocated string. caller should xfree() the returned string when finished with it.
 extern char* saprintf(char* fmt, ...);
@@ -31,6 +30,17 @@ extern char* saprintf(char* fmt, ...);
 #define bgstrlen(s)            ((!s)?0:strlen(s))
 
 #define bgstr(s)              ( (s) ?s :"" )
+
+// file stuff
+extern int   fsExists(const char* file);
+
+#define cp_removeSrc 0x01
+#define cp_mkdir     0x02
+
+// flags:
+//     cp_mkdir      if the destination folder tree does not exist, create all the parents as needed
+//     cp_removeSrc  after succesfull cp, remove the src file
+extern void  fsCopy(const char* src, const char* dst, int flags);
 
 extern char* mktempC(char* template);
 

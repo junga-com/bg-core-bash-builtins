@@ -21,7 +21,7 @@ void assertObjExpressionError(WORD_LIST* opts, char* fmt, ...)
 	// now add the opts to the front
 	args = WordList_join(opts, args);
 
-	__bgtrace("!!! assertObjExpressionError in builtin: %s\n", msg.buf);
+	bgtrace1(1, "!!! assertObjExpressionError in builtin: %s\n", msg.buf);
 	BGString_free(&msg);
 
 	_bgtraceStack();
@@ -1457,8 +1457,8 @@ int _bgclassCall(WORD_LIST* list)
 	// // local _memberOp="$_memberOp"
 	// ShellVar_createSet("_memberOp", _memberOp);
 	//
-	// // local _rsvMemberName="$_rsvMemberName"
-	// ShellVar_createSet("_rsvMemberName", _rsvMemberName);
+	// local _rsvMemberName="$_rsvMemberName"
+	ShellVar_createSet("_rsvMemberName", _rsvMemberName);
 	//
 	// // local _rsvMemberType="$_rsvMemberType"
 	// ShellVar_createSet("_rsvMemberType", _rsvMemberTypeStr);
@@ -1513,7 +1513,7 @@ int _bgclassCall(WORD_LIST* list)
 			exitCode = 1;
 		break;
 		case CA(eo_defaultOp,mt_nullMethod) :
-			assertObjExpressionError(NULL, "method not found '%s'", _rsvMemberName);
+			assertObjExpressionError(WordList_fromString("-v class:_this[_CLASS] -v methodName:_rsvMemberName -v objectExpression:_memberExpression", IFS,0), "object method not found '%s'", _rsvMemberName);
 		break;
 		case CA(eo_defaultOp,mt_nullEither) :
 			assertObjExpressionError(NULL, "niether method nor member variable found in this object '%s'",_rsvMemberName);
@@ -1603,11 +1603,16 @@ int _bgclassCall(WORD_LIST* list)
 			if (!methodArgs)
 				assertObjExpressionError(NULL, "object syntax error. $obj::<methodname> is missing <methodname>");
 
+			// set these in case of error report
+			_rsvMemberName = methodArgs->word->word;
+			ShellVar_setS("_rsvMemberName",_rsvMemberName);
+
 			char* _METHOD_key = save2string("_static::",methodArgs->word->word);
 			methodArgs = methodArgs->next;
 			_METHOD = ShellVar_assocGetS(vmtName, _METHOD_key);
 			if (!_METHOD)
-				assertObjExpressionError(NULL, "'%s' is not a member function of the Class '%s'", _METHOD_key, _CLASS);
+				//assertObjExpressionError(NULL, "'%s' is not a member function of the Class '%s'", _METHOD_key, _CLASS);
+				assertObjExpressionError( WordList_fromString("-v class:_CLASS -v staticMethod:_rsvMemberName",IFS,0), "The class '%s' does not contain a static method '%s'", _CLASS, _rsvMemberName);
 
 			vMethod = ShellFunc_find(_METHOD);
 			if (!vMethod)

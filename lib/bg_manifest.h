@@ -20,6 +20,11 @@ extern ManifestRecord* ManifestRecord_newFromLine(char* line);
 extern ManifestRecord* ManifestRecord_save(ManifestRecord* dst, ManifestRecord* src);
 extern void ManifestRecord_free(ManifestRecord* rec);
 extern char* manifestExpandOutStr(ManifestRecord* rec, char* outputStr);
+
+// OBSOLETE? use manifestGetC
 extern ManifestRecord manifestGet(char* manFile, char* outputStr, ManifestRecord* target, ManifestFilterFn filterFn);
+
+// This 'C' version returns 0 or more matching records instead of only the first. The caller must xfree() the returned array
+extern ManifestRecord* manifestGetC(char* manFile, char* outputStr, ManifestRecord* target, ManifestFilterFn filterFn);
 
 #endif // _bg_manifest_H_

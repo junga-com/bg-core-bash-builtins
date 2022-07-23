@@ -41,6 +41,14 @@
 
 // make this function from source.def avaialable
 extern int source_builtin (WORD_LIST *);
+extern int file_status(char* name);
+
+// this supports the idiom of the function by the same name as the shell function processing the WORD_LIST* into a 'options' struct
+// and passing that struct as the first argument to the 'C' version of the function. When call by another C function, we can pass
+// NULL as the options if we want to only do the basic operation. This macro at the start of hte C function makes it so that the
+// function body can access the options struct even if it was passed as NULL
+#define DefaultOpts(OptType, optPointer)  OptType defOpts = {0}; if (!optPointer) optPointer = &defOpts
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Error handling
@@ -84,7 +92,7 @@ extern void assertError_done();
 
 // var context/scope functions
 #define ShellAtGlobalScope()                     (shell_variables==global_variables)
-#define ShellPushFunctionScope(name)             push_var_context(name, VC_FUNCENV, temporary_env)
+#define ShellPushFunctionScope(name)             push_var_context(name, VC_FUNCENV, NULL)
 #define ShellPopFunctionScope()                  pop_var_context()
 
 // shell function functions
@@ -219,7 +227,7 @@ extern BUCKET_CONTENTS* AssocItr_peek(AssocItr* pI);
 // BGRetVar
 //    This supports a function that returns it result in a flexible way. See man(3) bgOptions_DoOutputVarOpts
 
-typedef enum {rt_simple, rt_array, rt_set, rt_echo, rt_arrayRef, rt_noop} BGRetType;
+typedef enum {rt_echo=0, rt_simple, rt_array, rt_set, rt_arrayRef, rt_noop} BGRetType;
 
 typedef struct {
 	SHELL_VAR* var;
@@ -266,9 +274,7 @@ extern WORD_LIST* fsExpandFilesC(
 
 extern char* pathGetCommon(WORD_LIST* paths);
 
-#define rid_removeSrc 0x01
-#define rid_mkdir     0x02
-
+// flags accepts cp_* flags from fsCopy
 extern int fsReplaceIfDifferent(char* srcFilename, char* destFilename, int flags);
 
 

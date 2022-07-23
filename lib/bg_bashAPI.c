@@ -82,6 +82,9 @@ int assertError(WORD_LIST* opts, char* fmt, ...)
 {
 	WORD_LIST* args = NULL;
 
+	// executing_line_number()
+	// shell_variables->name
+
 	// format the msg and make it the last item in args (we build args backwards)
 	BGString msg;    BGString_init(&msg, 100);
 	va_list vargs;   SH_VA_START (vargs, fmt);
@@ -1201,57 +1204,29 @@ int fsExpandFiles(WORD_LIST* args)
 	WORD_LIST* findOpts = NULL;
 	BGRetVar* retVar = BGRetVar_new();
 	while (args && (*(args->word->word) == '-' || *(args->word->word) == '+')) {
-
 		char* optArg;
 		char* param = args->word->word;
-		if (strcmp("--",args->word->word)==0)
-			{ args=args->next; break; }
-
-		// If any options conflict arise, findCmdLineCompat==true means use the find meaning and findCmdLineCompat==false means use our meaning
-		else if ((optArg=BGCheckOpt("--findCmdLineCompat", &args)))
-			;//findCmdLineCompat = 1;
-
-		else if ((optArg=BGCheckOpt("--force|-f", &args)))
-			flags = flags | ef_force;
-
+		if       (strcmp("--",args->word->word)==0)                 { args=args->next; break; }
+		else if ((optArg=BGCheckOpt("--findCmdLineCompat", &args))) ;//findCmdLineCompat = 1;
+		else if ((optArg=BGCheckOpt("--force|-f", &args)))          flags = flags | ef_force;
 		// aliases for -type d|f
-		else if ((optArg=BGCheckOpt("-F", &args)))
-			flags = flags | ef_filesOnly;
-		else if ((optArg=BGCheckOpt("-D|-d", &args)))
-			flags = flags | ef_foldersOnly;
-
+		else if ((optArg=BGCheckOpt("-F", &args)))                  flags = flags | ef_filesOnly;
+		else if ((optArg=BGCheckOpt("-D|-d", &args)))               flags = flags | ef_foldersOnly;
 		// -R means recurse (dont limit the depth) and +R means dont recurse (apply the find criteria only to the supplied paths)
-		else if ((optArg=BGCheckOpt("-R", &args)))
-			flags = flags | ef_recurse;
-		else if ((optArg=BGCheckOpt("+R", &args)))
-			flags = flags & (!ef_recurse);
-
+		else if ((optArg=BGCheckOpt("-R", &args)))                  flags = flags | ef_recurse;
+		else if ((optArg=BGCheckOpt("+R", &args)))                  flags = flags & (!ef_recurse);
 		// modify the output
-		else if ((optArg=BGCheckOpt("--basename|-b", &args)))
-			fsef_prefixToRemove = "*/";
-		else if ((optArg=BGCheckOpt("-B*", &args)))
-			fsef_prefixToRemove = optArg;
-
+		else if ((optArg=BGCheckOpt("--basename|-b", &args)))       fsef_prefixToRemove = "*/";
+		else if ((optArg=BGCheckOpt("-B*", &args)))                 fsef_prefixToRemove = optArg;
 		// should we exclude patterns from gitignore?
-		else if ((optArg=BGCheckOpt("--gitignore", &args)))
-			_gitIgnorePath = "<glean>";
-		else if ((optArg=BGCheckOpt("--gitignore*", &args)))
-			_gitIgnorePath = (strcmp(optArg,"")==0) ? "<glean>" : optArg;
-
+		else if ((optArg=BGCheckOpt("--gitignore", &args)))         _gitIgnorePath = "<glean>";
+		else if ((optArg=BGCheckOpt("--gitignore*", &args)))        _gitIgnorePath = (strcmp(optArg,"")==0) ? "<glean>" : optArg;
 		// exclude some results
-		else if ((optArg=BGCheckOpt("--exclude*", &args)))
-			excludePaths = WordList_unshiftQ(excludePaths, optArg);
-
+		else if ((optArg=BGCheckOpt("--exclude*", &args)))          excludePaths = WordList_unshiftQ(excludePaths, optArg);
 		// native find (GNU utility) 'real' options (as opposed to find criteria and actions that also start with '-')
-		else if ((optArg=BGCheckOpt("-H|-L|-P", &args)))
-			findOpts = WordList_unshift(findOpts, optArg);
-		else if ((optArg=BGCheckOpt("-D*|-O*", &args)))
-			{findOpts = WordList_unshift(findOpts, optArg);findOpts = WordList_unshift(findOpts, param);}
-
-		// process retVar options (-A <aryRet>|-R <retVar>|-S<setVar>|...)
-		else if ((BGRetVar_initFromOpts(&retVar, &args)))
-			;
-
+		else if ((optArg=BGCheckOpt("-H|-L|-P", &args)))            findOpts = WordList_unshift(findOpts, optArg);
+		else if ((optArg=BGCheckOpt("-D*|-O*", &args)))             {findOpts = WordList_unshift(findOpts, optArg);findOpts = WordList_unshift(findOpts, param);}
+		else if ((BGRetVar_initFromOpts(&retVar, &args)))           ;
 		else break; //assertError(NULL, "invalid option '%s'\n", args->word->word);
 		args = (args) ? args->next : NULL;
 	}
@@ -1447,37 +1422,12 @@ int fsReplaceIfDifferent(char* srcFilename, char* destFilename, int flags)
 	}
 
 	if (changedFlag) {
-		FILE* srcFD = fopen(srcFilename, "r");
-		FILE* destFD = fopen(destFilename, "w");
-		if (!destFD && (flags&rid_mkdir)) {
-			char* parentFolder = savestring(destFilename);
-			char* p = parentFolder; while (*p=='/') p++;
-			struct stat sb;
-			while ((p = strchr (p, '/'))) {
-				*p = '\0';
-				if (stat(parentFolder, &sb) != 0)
-					mkdir(parentFolder, 0777);
-				*p = '/';
-				while (*p=='/') p++;
-			}
-			xfree(parentFolder);
-			destFD = fopen(destFilename, "w");
+		fsCopy(srcFilename, destFilename, flags);
+	} else {
+		if (flags&cp_removeSrc) {
+			if (remove(srcFilename)!=0)
+				assertError(NULL, "fsCopy: could not remove file '%s'. %s", srcFilename, strerror(errno));
 		}
-
-		if (!destFD)
-			assertError(NULL, "fsReplaceIfDifferent: could not open destFilename(%s) for writing. ", destFilename);
-
-		while (BGString_readln(&srcBuf,  srcFD)) {
-			BGString_writeln(&srcBuf,  destFD);
-		}
-		fclose(srcFD);
-		fclose(destFD);
 	}
-
-	if (flags&rid_removeSrc) {
-		if (remove(srcFilename)!=0)
-			assertError(NULL, "fsReplaceIfDifferent: coupld not remove srcFilename(%s). %s", srcFilename, strerror(errno));
-	}
-
 	return changedFlag;
 }

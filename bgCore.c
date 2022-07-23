@@ -323,6 +323,15 @@ int bgCore_builtin(WORD_LIST* list)
 			list = list->next;
 			ret = templateExpandStr(list);
 
+		// bgCore templateExpand
+		} else if (strcmp("templateExpand", list->word->word)==0) {
+			list = list->next;
+			ret = templateExpand(list);
+
+		// bgCore templateFind
+		} else if (strcmp("templateFind", list->word->word)==0) {
+			list = list->next;
+			ret = templateFind(list);
 
 		// ### ini ###############################################################################################################
 

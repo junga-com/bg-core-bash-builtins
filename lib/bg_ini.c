@@ -715,11 +715,8 @@ int iniParamGet(WORD_LIST* args)
 
 char* iniParamGetC(IniScheme* pScheme, char* iniFilenameSpec, char* targetSection, char* targetName, char* defValue)
 {
-	IniScheme defScheme; IniScheme_init(&defScheme);
-	if (!pScheme)
-		pScheme = &defScheme;
-	else
-		IniScheme_validate(pScheme);
+	DefaultOpts(IniScheme, pScheme);
+	IniScheme_validate(pScheme);
 
 	// expand the iniFilenameSpec into a list of 0 or more existing files
 	// we may not need to do this b/c the loop efficiently skips files that do not exist, but the bash implementation needs to
@@ -807,11 +804,8 @@ char* iniParamGetC(IniScheme* pScheme, char* iniFilenameSpec, char* targetSectio
 void iniParamSetC(IniScheme* pScheme, char* iniFilename, char* targetSection, char* targetName, char* targetValue)
 {
 	//__bgtrace("############################# start iniParamSetC() ##############################\n");
-	IniScheme defScheme; IniScheme_init(&defScheme);
-	if (!pScheme)
-		pScheme = &defScheme;
-	else
-		IniScheme_validate(pScheme);
+	DefaultOpts(IniScheme, pScheme);
+	IniScheme_validate(pScheme);
 
 	if (pScheme->schema)
 		iniValidate(pScheme->schema, targetValue);
@@ -894,7 +888,7 @@ void iniParamSetC(IniScheme* pScheme, char* iniFilename, char* targetSection, ch
 	IniLineBuffer_flushAll(lineBuffer, tmpFD);
 	fclose(tmpFD);
 
-	int wasChanged = fsReplaceIfDifferent(tmpName, iniFilename, rid_removeSrc | ((pScheme->mkdirFlag)?rid_mkdir:0));
+	int wasChanged = fsReplaceIfDifferent(tmpName, iniFilename, cp_removeSrc | ((pScheme->mkdirFlag)?cp_mkdir:0));
 
 	xfree(tmpName);
 

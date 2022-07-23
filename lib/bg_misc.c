@@ -3,7 +3,12 @@
 
 #include <errno.h>
 #include <regex.h>
+
+#include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+
+#include <sys/sendfile.h>
 
 #define _GNU_SOURCE 1
 #include <string.h>
@@ -207,6 +212,44 @@ void hexDump(char *desc, void *addr, int len)
 int fsExists(const char* file) {
 	struct stat buf;
 	return (stat(file, &buf) == 0);
+}
+
+#define fsCopyChunkSize (4096*1000)
+
+void fsCopy(const char* src, const char* dst, int flags) {
+	int srcFD = open(src, O_RDONLY);
+	if (srcFD<=0)
+		assertError(NULL, "fsCopy could not open source file for reading. filename='%s'", src);
+	int dstFD = open(dst, O_WRONLY|O_CREAT|O_TRUNC, 0777);
+	if (dstFD<=0) {
+		if (flags&cp_mkdir) {
+			char* parentFolder = savestring(dst);
+			char* p = parentFolder; while (*p=='/') p++;
+			struct stat sb;
+			while ((p = strchr (p, '/'))) {
+				*p = '\0';
+				if (stat(parentFolder, &sb) != 0)
+					mkdir(parentFolder, 0777);
+				*p = '/';
+				while (*p=='/') p++;
+			}
+			xfree(parentFolder);
+			dstFD = open(dst, O_WRONLY|O_CREAT|O_TRUNC, 0777);
+		}
+
+		if (dstFD<=0) {
+			close(srcFD);
+			assertError(NULL, "fsCopy could not open destination file for writing. filename='%s'", dst);
+		}
+	}
+	while (sendfile(dstFD, srcFD, NULL, fsCopyChunkSize));
+	close(srcFD);
+	close(dstFD);
+
+	if (flags&cp_removeSrc) {
+		if (remove(src)!=0)
+			assertError(NULL, "fsCopy: could not remove file '%s'. %s", src, strerror(errno));
+	}
 }
 
 char* saprintf(char* fmt, ...)
