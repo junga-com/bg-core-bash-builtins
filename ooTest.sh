@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 source /usr/lib/bg_core.sh
 
+# import bg_template.sh  ;$L1;$L2
+# templateExpandStr "Hello $USER. Now is %now:^H:%M:^S% good%bye"
+# exit
+
+
 #bgCore testAssertError
 
 # echo wasup

@@ -1099,11 +1099,10 @@ WORD_LIST* fsExpandFilesC(
 	// if none of the starting points exist this invocation will match nothing, but there is nothing we can set findStartingPoints
 	// to so that find would exit cleanly without displaying an error so we return here
 	if (!findStartingPoints) {
-		BGRetVar_startOutput(retVar);
 		if (retVar) {
+			BGRetVar_startOutput(retVar);
 			if (flags&ef_force)
 				outputValue(retVar, "/dev/null");
-			xfree(retVar);
 		}
 		return NULL;
 	}

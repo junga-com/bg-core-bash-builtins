@@ -1,6 +1,8 @@
 
 #include "bg_templates.h"
 
+#include <time.h>
+
 #include "bg_bashAPI.h"
 #include "BGString.h"
 #include "BGFileLines.h"
@@ -402,25 +404,29 @@ char* _parseTemplateExpr(TemplateExpression* pExpr, char* pStart)
 
 	} else if (strncmp(pS, "config[", 7)==0) {
 		pS+=7;
-		pE = pS; while (*pE && *pE!=']' && *pE!=':' && *pE!='%') pE++;
+		//pE = pS; while (*pE && *pE!=']' && *pE!=':' && *pE!='%') pE++;
+		pE = bgstrpbrk(pS, "%:]\n\0");
 		if (*pE==']') {
 			pExpr->configSect = savestringn(pS,(pE-pS));
 			pS = pE+1;
 			pE = pS; while (*pE && *pE!=':' && *pE!='%') pE++;
 			pExpr->configName = savestringn(pS,(pE-pS));
-			pS = pE;
 		} else {
 			pExpr->badSyntax = 2;
-			pS = pE;
 		}
+		pS = pE;
+
 	} else if (*pS == '$')  {
 		// TODO: call a function from bg_objects.c to consume the expression so that it can contain :
 		// consider using parse_string() here
-		pE = pS; while (*pE && *pE!=':' && *pE!='%') pE++;
+		//pE = pS; while (*pE && *pE!=':' && *pE!='%') pE++;
+		pE = bgstrpbrk(pS, "%:\n\0");
 		pExpr->objExpr = savestringn(pS,(pE-pS));
 		pS = pE;
+
 	} else {
-		pE = pS; while (*pE && *pE!=':' && *pE!='%') pE++;
+		//pE = pS; while (*pE && *pE!=':' && *pE!='%') pE++;
+		pE = bgstrpbrk(pS, "%:\n\0");
 		pExpr->varname = savestringn(pS,(pE-pS));
 		pS = pE;
 	}
@@ -430,7 +436,8 @@ char* _parseTemplateExpr(TemplateExpression* pExpr, char* pStart)
 
 	if (*pS==':') {
 		pS++;
-		pE = pS; while (*pE && *pE!='%') pE++;
+		//pE = pS; while (*pE && *pE!='%') pE++;
+		pE = bgstrpbrk(pS, "%\n\0");
 		pExpr->defaultVal = savestringn(pS,(pE-pS));
 		pS = pE;
 	}
@@ -454,6 +461,22 @@ void _evaluateTemplateExpr(TemplateExpression* pExpr, BGString* pOut)
 			*pS++ = '%';
 		*pS = '\0';
 
+	} else if (strcmp("now",bgstr(pExpr->varname))==0) {
+		time_t nowEpoch = time(NULL);
+		struct tm nowTime; localtime_r(&nowEpoch, &nowTime);
+		char* format = NULL;
+		if ((!pExpr->defaultVal) || !(*pExpr->defaultVal) || strcasecmp("RFC5322", pExpr->defaultVal)==0)
+			format = "%a, %d %b %Y %T %z";
+		else {
+			format = pExpr->defaultVal;
+			for (char* s=format; s && *s; s++)
+				if (*s=='^')
+					*s = '%';
+		}
+		value = allocatedValue = malloc(200);
+		*value = '\0';
+		strftime(value, 200, format, &nowTime);
+
 	} else if (pExpr->varname) {
 		SHELL_VAR* var = ShellVar_find(pExpr->varname);
 		value = ShellVar_get(var);
@@ -469,15 +492,21 @@ void _evaluateTemplateExpr(TemplateExpression* pExpr, BGString* pOut)
 		assertError(NULL, "_evaluateTemplateExpr: logic error.  none of (varname,configSect,objExpr) are set in pExpr");
 
 	if (!value) {
+		if (!value && pExpr->badSyntax) {
+			value = pExpr->expr;
+		}
+
 		if (!value && pExpr->required) {
 			assertError(WordList_fromString("--errorClass=assertTemplateError --errorFn=templateEvaluateVarToken -v context:_contextETV", IFS,0),"The required template variable '%s' does not exist", pExpr->varname);
 		}
 
-		if (pExpr->defaultVal && *pExpr->defaultVal=='$') {
+		if (!value && pExpr->defaultVal && *pExpr->defaultVal=='$') {
 			char* defRef = pExpr->defaultVal +1;
 			SHELL_VAR* defVar = ShellVar_find(defRef);
 			value = ShellVar_get(defVar);
-		} else {
+		}
+
+		if (!value) {
 			value = pExpr->defaultVal;
 		}
 	}

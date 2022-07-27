@@ -208,6 +208,14 @@ void hexDump(char *desc, void *addr, int len)
 	__bgtrace("  %s\n", buff);
 }
 
+char* bgstrpbrk(char* s, char* delims)
+{
+	char* retVar = strpbrk(s, delims);
+	if (!retVar)
+		retVar = s + strlen(s);
+	return retVar;
+}
+
 
 int fsExists(const char* file) {
 	struct stat buf;

@@ -31,6 +31,8 @@ extern char* saprintf(char* fmt, ...);
 
 #define bgstr(s)              ( (s) ?s :"" )
 
+extern char* bgstrpbrk(char* s, char* delims);
+
 // file stuff
 extern int   fsExists(const char* file);
 
