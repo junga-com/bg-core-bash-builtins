@@ -217,6 +217,30 @@ extern BUCKET_CONTENTS* AssocItr_next(AssocItr* pI);
 extern BUCKET_CONTENTS* AssocItr_peek(AssocItr* pI);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// AssocSortedItr
+
+typedef struct {
+	HASH_TABLE* table;
+	BUCKET_CONTENTS** allItems;
+	int allocSize;
+	int position;
+} AssocSortedItr;
+
+// two patterns:
+//   AssocSortedItr itr={0};
+//   for (BUCKET_CONTENTS* item=AssocSortedItr_first(&itr,assoc_cell(var)); item; item=AssocSortedItr_next(&itr) )
+// or..
+//   AssocSortedItr itr; AssocSortedItr_init(&itr,assoc_cell(var));
+//   BUCKET_CONTENTS* bVar;
+//   while (bVar=AssocSortedItr_next(&itr) )
+
+extern void             AssocSortedItr_init(AssocSortedItr* pI, HASH_TABLE* pTbl);
+extern void             AssocSortedItr_free(AssocSortedItr* pI);
+extern BUCKET_CONTENTS* AssocSortedItr_first(AssocSortedItr* pI, HASH_TABLE* pTbl);
+extern BUCKET_CONTENTS* AssocSortedItr_next(AssocSortedItr* pI);
+extern BUCKET_CONTENTS* AssocSortedItr_peek(AssocSortedItr* pI);
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ArrayItr (there is no ArrayItr -- use this pattern)
 // for (ARRAY_ELEMENT* el = ShellVar_arrayStart(var); el!=ShellVar_arrayEOL(var); el=el->next ) {
 //     bgtrace2(0,"index='%d'  value='%s'\n", el->ind, el->value);

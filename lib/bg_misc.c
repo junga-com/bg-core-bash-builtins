@@ -308,7 +308,8 @@ char* mktempC(char* template)
 	int charsetSize = (int) (sizeof(charset) -1);
 
 	FILE* urandFD = fopen("/dev/urandom","r");
-	fread(pS, 1,randoCount, urandFD);
+	if ((!urandFD) || (!fread(pS, 1,randoCount, urandFD)))
+		assertError(NULL, "mktempC: could not access /dev/urandom");
 	for (int n=0;n < randoCount;n++,pS++) {
 		//__bgtrace("  rand='%d' [%d] -> '%c'\n",*pS, abs(*pS) % charsetSize, charset[abs(*pS) % charsetSize]);
 		*pS = charset[abs(*pS) % charsetSize];

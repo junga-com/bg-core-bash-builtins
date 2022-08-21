@@ -358,8 +358,8 @@ int bgCore_builtin(WORD_LIST* list)
 
 		// bgCore testAssertError
 		} else if (strcmp("testAssertError", list->word->word)==0) {
-			char* foo = NULL;
-			if (*foo=='\0') printf("hoots\n");
+			//char* foo = NULL;
+			//if (*foo=='\0') printf("hoots\n");
 			testAssertError(list->next);
 			ret = EXECUTION_SUCCESS;
 
@@ -367,33 +367,15 @@ int bgCore_builtin(WORD_LIST* list)
 		} else if (strcmp("transTest", list->word->word)==0) {
 			list = list->next;
 
-			// WORD_LIST* files = expand_words(WordList_fromString("/etc/bg* *.sh", IFS, 0));
-			// while (files) {
-			// 	printf("   := '%s'\n", files->word->word);
-			// 	files = files->next;
-			// }
+			SHELL_VAR* vAssoc = ShellVar_find(list->word->word);
+			AssocSortedItr itr = {0}; AssocSortedItr_init(&itr, assoc_cell(vAssoc));
+			BUCKET_CONTENTS* pEl;
+			while ((pEl = AssocSortedItr_next(&itr))) {
+				printf("%s\n",pEl->key);
+			}
+			AssocSortedItr_free(&itr);
 
-			WORD_LIST* cmdLine = WordList_fromString("find man7 .bglocal/funcman ( ( -type d ( -false ) ) -o ( -false ) ) -prune -o ( -type f -path *man*/*.[1-9]* ) > /tmp/bgCore.out", IFS,0);
-			printf("cmdLine = %s\n", WordList_toString(cmdLine));
-			for (WORD_LIST* l=cmdLine; l; l=l->next)
-				l->word->flags |= W_DQUOTE;
-			printf("cmdLine = %s\n", WordList_toString(cmdLine));
-			for (WORD_LIST* l=cmdLine; l; l=l->next)
-				l->word->flags |= W_QUOTED;
-			printf("cmdLine = %s\n", WordList_toString(cmdLine));
-			parse_and_execute (WordList_toString(cmdLine), "test", SEVAL_NOHIST | SEVAL_NOFREE | SEVAL_NOHISTEXP | SEVAL_NONINT);
-//			parse_and_execute ("find . > /tmp/cmd.out", "test", SEVAL_NOHIST | SEVAL_NOFREE | SEVAL_NOHISTEXP | SEVAL_NONINT);
 
-//			WORD_LIST* cmdArgs = WordList_unshift(NULL, ".");
-//			cmdArgs = WordList_unshift(cmdArgs, "fsExpandFiles");
-			ret = fsExpandFiles(list);
-
-			// WORD_LIST* cmdArgs = WordList_unshift(NULL, "/tmp/cmd.out");
-			// cmdArgs = WordList_unshift(cmdArgs, ">");
-			// cmdArgs = WordList_unshift(cmdArgs, ".");
-			// cmdArgs = WordList_unshift(cmdArgs, "find");
-			// ShellFunc_executeS(cmdArgs);
-			// ret = EXECUTION_SUCCESS;
 
 		} else {
 			assertError(NULL, "error: command not recognized cmd='%s'\n", (list && list->word)?list->word->word:"");

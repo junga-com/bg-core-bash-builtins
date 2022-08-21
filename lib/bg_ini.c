@@ -56,6 +56,7 @@ typedef struct {
 
 
 extern char* parserFindEndOfValue(char* pS);
+extern char* iniRemoveQuotes(char* pS);
 extern void IniLine_parse(IniLine* pLine, IniScheme* pScheme);
 
 
@@ -155,20 +156,8 @@ void IniLine_parse(IniLine* pLine, IniScheme* pScheme)
 		pS++; while (*pS && whitespace(*pS)) pS++;
 
 		// the value may be quoted and there may be an EOL comment so use a helper function to find the end.
+		// and remove any matched pair of quotes
 		pE = parserFindEndOfValue(pS);
-
-		// remove quotes if present
-		pLine->paramQuoteMode="";
-		if ( (*pS=='"' && (pE>pS) && *(pE-1)=='"') ) {
-			pLine->paramQuoteMode="\"";
-			pS++;
-			pE--;
-		}
-		if ( (*pS=='\'' && (pE>pS) && *(pE-1)=='\'') ) {
-			pLine->paramQuoteMode="'";
-			pS++;
-			pE--;
-		}
 
 		// ok, we got it
 		pLine->paramValue = pS;
@@ -176,7 +165,6 @@ void IniLine_parse(IniLine* pLine, IniScheme* pScheme)
 
 		// if parserFindEndOfValue did its job right, this block will set pLine->comment to either the '#' of an EOL comment or the
 		// terminating '\0'
-		if (*pLine->paramQuoteMode) pE++;
 		while (*pE && whitespace(*pE)) pE++;
 		pLine->comment = pE;
 	}
@@ -267,23 +255,23 @@ void IniLine_setToSetting(IniLine* pLine, IniScheme* pScheme, char* name, char* 
 	// nameValueDelim is the first char in the pScheme->delim with default being '='
 	char nameValueDelim = (pScheme->delim) ? *pScheme->delim : '=';
 
-	pLine->paramQuoteMode = pScheme->quoteMode;
+	pLine->paramQuoteMode = bgstr(pScheme->quoteMode);
 
-	if (*pLine->paramQuoteMode=='\0' && strchr(value,'#'))
-		pLine->paramQuoteMode = "\"";
+	if ( (!*bgstr(pLine->paramQuoteMode)) && strchr(value,'#'))
+		pLine->paramQuoteMode = "'";
 
 	// <name><paramPad><delim><paramPad><quoteMode><value><quoteMode><commentSeparator><comment>
 	//   foo              =                           5                     #        some note
 	IniLine_allocSpaceFor(pLine, 3 + bgstrlen(name) + bgstrlen(value) + 3 + bgstrlen(pScheme->comment) + 2*bgstrlen(pScheme->paramPad) + 2*bgstrlen(pLine->paramQuoteMode) + 1);
 
 	char* pS = pLine->line;
-	strcpy(pS, name);                   while (*pS) pS++;
-	strcpy(pS, pScheme->paramPad);      while (*pS) pS++;
-	*pS++ = nameValueDelim;             *pS = '\0';
-	strcpy(pS, pScheme->paramPad);      while (*pS) pS++;
-	strcpy(pS, pLine->paramQuoteMode);  while (*pS) pS++;
-	strcpy(pS, value);                  while (*pS) pS++;
-	strcpy(pS, pLine->paramQuoteMode);  while (*pS) pS++;
+	strcpy(pS, name);                          while (*pS) pS++;
+	strcpy(pS, pScheme->paramPad);             while (*pS) pS++;
+	*pS++ = nameValueDelim;                    *pS = '\0';
+	strcpy(pS, pScheme->paramPad);             while (*pS) pS++;
+	strcpy(pS, bgstr(pLine->paramQuoteMode));  while (*pS) pS++;
+	strcpy(pS, value);                         while (*pS) pS++;
+	strcpy(pS, bgstr(pLine->paramQuoteMode));  while (*pS) pS++;
 	if (pScheme->comment) {
 		char* commentSeparator = _getCommentSeparator(pScheme->comment);
 		strcpy(pS, commentSeparator);   while (*pS) pS++;
@@ -304,18 +292,12 @@ void IniLine_updateSettingValue(IniLine* pLine, IniScheme* pScheme, char* name, 
 	if (!value)
 		value = "";
 
-	// make paramValue include its quotes if present
-	if (*pLine->paramQuoteMode) {
-		pLine->paramValue--;
-		pLine->paramValueLen += 2;
-	}
-
 	// if the new value contains a '#' and the old value was not already using quotes, turn on quotes
-	if (*pLine->paramQuoteMode=='\0' && strchr(value,'#'))
-		pLine->paramQuoteMode = "\"";
+	if ( (!*bgstr(pLine->paramQuoteMode)) && strchr(value,'#'))
+		pLine->paramQuoteMode = "'";
 
 	int newValueLen = strlen(value);
-	int valLenChange = newValueLen + ( (*pLine->paramQuoteMode)? 2:0 ) - pLine->paramValueLen;
+	int valLenChange = newValueLen + ( bgstrlen(pLine->paramQuoteMode)*2 ) - pLine->paramValueLen;
 
 	// grow if needed
 	if (valLenChange>0) {
@@ -336,14 +318,14 @@ void IniLine_updateSettingValue(IniLine* pLine, IniScheme* pScheme, char* name, 
 
 	// copy the new value into the space which is now the correct size
 	pS = pLine->paramValue;
-	if (*pLine->paramQuoteMode)
+	if (*bgstr(pLine->paramQuoteMode))
 		{memmove(pS, pLine->paramQuoteMode, 1);  pS++;}
 	memmove(pS, value, newValueLen);             pS += newValueLen;
-	if (*pLine->paramQuoteMode)
+	if (*bgstr(pLine->paramQuoteMode))
 		{memmove(pS, pLine->paramQuoteMode, 1);  pS++;}
 
 	// make paramValue exclude the quotes if present
-	if (*pLine->paramQuoteMode) {
+	if (*bgstr(pLine->paramQuoteMode)) {
 		pLine->paramValue++;
 		pLine->paramValueLen -= 2;
 	}
@@ -761,6 +743,7 @@ char* iniParamGetC(IniScheme* pScheme, char* iniFilenameSpec, char* targetSectio
 				case ilt_setting:
 					if (inSect && IniLine_isParamNameEqTo(&iniLine, targetName)) {
 						targetValue = savestringn(iniLine.paramValue, iniLine.paramValueLen);
+						iniRemoveQuotes(targetValue);
 					}
 					break;
 			}
@@ -937,26 +920,65 @@ int iniParamSet(WORD_LIST* args)
 }
 
 
-
+// this function starts at pS and advances until an unquoted # or EOL is reached
+// it removes quotes
 char* parserFindEndOfValue(char* pS)
 {
 	char* pE = pS;
-	if (*pS == '"') {
-		pE++;
-		while (*pE && ! (*pE=='"' && *(pE-1)!='\\') ) pE++;
-		if (*pE=='"') pE++;
-	} else if (*pS == '\'') {
-		pE++;
-		while (*pE && ! (*pE=='\'' && *(pE-1)!='\\') ) pE++;
-		if (*pE=='\'') pE++;
-	} else if (*pS != '\0') {
-		pE++;
-		while (*pE && *pE!='#' ) pE++;
-		while ((pE>pS) && whitespace(*(pE-1)) ) pE--;
+	while (*pE && *pE!='#') {
+		if (*pE == '"') {
+			pE++;
+			while (*pE && ! (*pE=='"' && *(pE-1)!='\\') ) pE++;
+			if (*pE=='"') pE++;
+		} else if (*pE == '\'') {
+			pE++;
+			while (*pE && ! (*pE=='\'' && *(pE-1)!='\\') ) pE++;
+			if (*pE=='\'') pE++;
+		} else if (*pE != '\0') {
+			pE++;
+			// note that the look back *(pE-1)!='\\' will never be evaluated on the first char because when the first char is ' or "
+			// it drops into one of the other codition blocks -- not this one
+			while (*pE && *pE!='#' && (! (*pE=='"' && *(pE-1)!='\\'))  && (! (*pE=='\'' && *(pE-1)!='\\')) ) pE++;
+		}
 	}
+	// remove trailing whitespace
+	while ((pE>pS) && whitespace(*(pE-1)) ) pE--;
 	return pE;
 }
 
+// note that this is mostly the same algorithm as parserFindEndOfValue but it removes the quotes it finds.
+// TODO: merge parserFindEndOfValue and this function using an option to remove quotes or not
+char* iniRemoveQuotes(char* pS)
+{
+	char* pE = pS;
+	while (*pE && *pE!='#') {
+		if (*pE == '"') {
+			char* pQStart = pE++;
+			while (*pE && ! (*pE=='"' && *(pE-1)!='\\') ) pE++;
+			if (*pE=='"') {
+				memmove(pE, pE+1, strlen(pE+1)+1);
+				memmove(pQStart, pQStart+1, strlen(pQStart+1)+1);
+				pE-=2;
+			}
+		} else if (*pE == '\'') {
+			char* pQStart = pE++;
+			while (*pE && ! (*pE=='\'' && *(pE-1)!='\\') ) pE++;
+			if (*pE=='\'') {
+				memmove(pE, pE+1, strlen(pE+1)+1);
+				memmove(pQStart, pQStart+1, strlen(pQStart+1)+1);
+				pE-=2;
+			}
+		} else if (*pE != '\0') {
+			pE++;
+			// note that the look back *(pE-1)!='\\' will never be evaluated on the first char because when the first char is ' or "
+			// it drops into one of the other codition blocks -- not this one
+			while (*pE && *pE!='#' && (! (*pE=='"' && *(pE-1)!='\\'))  && (! (*pE=='\'' && *(pE-1)!='\\')) ) pE++;
+		}
+	}
+	// remove trailing whitespace
+	while ((pE>pS) && whitespace(*(pE-1)) ) pE--;
+	return pE;
+}
 
 char* _configGetScopedFilesList()
 {

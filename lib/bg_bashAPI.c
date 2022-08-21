@@ -514,6 +514,73 @@ BUCKET_CONTENTS* AssocItr_peek(AssocItr* pI)
 }
 
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// AssocSortedItr
+
+int AssocSortedItr_qsortComp(BUCKET_CONTENTS** p1, BUCKET_CONTENTS** p2)
+{
+	if (!*p1 && !*p2) return 0;
+	if (!*p1)        return 1;
+	if (!*p2)        return -1;
+	return strcmp((*p1)->key,(*p2)->key);
+}
+
+// note that pI must be initialized to null like AssocSortedItr* myItr = {0}; before calling this init
+void AssocSortedItr_init(AssocSortedItr* pI, HASH_TABLE* pTbl)
+{
+	if (pI->allocSize>0) {
+		xfree(pI->allItems);
+	}
+	pI->table = pTbl;
+	pI->allItems=NULL;
+	pI->allocSize=(pTbl)?pTbl->nentries:0;
+	pI->position=0;
+
+	if (pI->allocSize > 0) {
+		pI->allItems = xmalloc(pI->allocSize * sizeof(BUCKET_CONTENTS*));
+		int copiedCount = 0;
+		BUCKET_CONTENTS** pDestArray = pI->allItems;
+		for (int i=0; i<pTbl->nbuckets; i++) {
+			BUCKET_CONTENTS* pItem = pTbl->bucket_array[i];
+			while (pItem) {
+				if (++copiedCount > pTbl->nentries)
+					assertError(NULL, "AssocSortedItr_init: logic error. found more entries than pTbl->nentries so our memory vector is not big enough");
+				*pDestArray++ = pItem;
+				pItem = pItem->next;
+			}
+		}
+		qsort(pI->allItems,pI->allocSize,sizeof(BUCKET_CONTENTS*), (QSFUNC *)AssocSortedItr_qsortComp);
+	}
+}
+
+void AssocSortedItr_free(AssocSortedItr* pI)
+{
+	AssocSortedItr_init(pI,NULL);
+}
+
+
+BUCKET_CONTENTS* AssocSortedItr_first(AssocSortedItr* pI, HASH_TABLE* pTbl)
+{
+	AssocSortedItr_init(pI, pTbl);
+	return AssocSortedItr_next(pI);
+}
+
+BUCKET_CONTENTS* AssocSortedItr_next(AssocSortedItr* pI)
+{
+	return (pI->position < pI->allocSize)? pI->allItems[pI->position++] : NULL;
+}
+
+BUCKET_CONTENTS* AssocSortedItr_peek(AssocSortedItr* pI)
+{
+	return (pI->position < pI->allocSize)? pI->allItems[pI->position] : NULL;
+}
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Misc
+
+
 char* vcFlagsToString(VAR_CONTEXT* vc)
 {
 	// #define VC_HASLOCAL	0x01

@@ -231,7 +231,7 @@ ManifestRecord* manifestGetC(char* manFile, char* outputStr, ManifestRecord* tar
 		// grow the retVal array if needed. +2 is so that we realloc enough for this rec and also the null rec at the end
 		if (retValCount+2 > retValAllocCount) {
 			retValAllocCount += 10;
-			ManifestRecord* retVal = xrealloc(retVal, retValAllocCount*sizeof(ManifestRecord));
+			retVal = xrealloc(retVal, retValAllocCount*sizeof(ManifestRecord));
 		}
 
 		ManifestRecord_save(&(retVal[retValCount++]), &rec);

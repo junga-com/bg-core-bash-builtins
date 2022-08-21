@@ -198,7 +198,7 @@ void BashObj_makeRef(BashObj* pObj)
 	strcat(pObj->ref,pObj->vThis->name);
 	strcat(pObj->ref," ");
 	strcat(pObj->ref,pObj->vCLASS->name);
-	strcat(pObj->ref," 0 | ");
+	strcat(pObj->ref," 0 |");
 }
 
 void BashObj_makeVMT(BashObj* pObj)
