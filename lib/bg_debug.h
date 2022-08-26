@@ -20,7 +20,7 @@
 // 2 == more tracing
 // 9 == all tracing
 #ifndef bgtraceLevel
-#define bgtraceLevel 9
+#define bgtraceLevel 0
 #endif
 
 #if bgtraceLevel > 0

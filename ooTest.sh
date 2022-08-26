@@ -1,8 +1,5 @@
 source /usr/lib/bg_core.sh
-iniFile="/tmp/initest.ini"
-expectedValue="hello#world"
-iniParamGet "$iniFile" . p
-setIniParam "$iniFile" '.' p "$expectedValue"
+
 exit
 
 # import bg_template.sh  ;$L1;$L2
