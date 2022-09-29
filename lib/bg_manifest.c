@@ -157,6 +157,7 @@ ManifestRecord manifestGet(char* manFile, char* outputStr, ManifestRecord* targe
 			break;
 	}
 
+	fclose(manFileFD);
 	xfree(buf);
 	BGString_free(&parser);
 	return retVal;
@@ -240,6 +241,7 @@ ManifestRecord* manifestGetC(char* manFile, char* outputStr, ManifestRecord* tar
 	// we always realloc enough for a NULL record at the end so we dont need to check if there is room here
 	ManifestRecord_assign(&(retVal[retValCount]),    NULL,NULL,NULL,NULL);
 
+	fclose(manFileFD);
 	xfree(buf);
 	BGString_free(&parser);
 	return retVal;

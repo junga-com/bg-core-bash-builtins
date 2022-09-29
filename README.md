@@ -1,54 +1,17 @@
-This project provides the bgObject loadable builtin for bash
+This project provides the bgCore and import loadable builtins for bash which accelerates the code in bg-core.
 
 ### DESCRIPTION:
-The bg-core package includes the bg_objects.sh bash script library that enables using object oriented programming techniques in
-bash scripts. The default implementation uses only bash functions to implement the OO features. That works but an object oriented
-method call adds about 20ms (on an Intel 11th Gen Core i7-1165G7) of overhead compared to a normal bash function call. Enabling
-this loadable builtin will redirect several bg_objects.sh functions to the "bgObject <cmd> [<arg1>...<argN>]" builtin command which
-eliminates most of that overhead. There will still be about 1/2 a ms (0.0005sec) overhead so normal bash functions should be prefered
-for any low level script features that may be called many times in a script.
+bg-core is a project of bash script libraries that make it easier to write bash scripts for system administration. If the bgCore.so
+is installed on a host, it will be loaded to expose two new bash builtin commands -- bgCore and import. import will replace the shell
+function of the same name and various other shell functions in bg-core will call 'bgCore <command> "$@"' to utilize the more efficient
+builtin implementations.
 
-The bg_object.sh library  will automatically enable and use this builtin if it is installed (or bg-dev virtually installed) on the
-host.  It will attempt to "enable -f bgCore.so bgCore" but will fallback to the bash script implementation if the builtin is
-not found in any of the paths in BASH_LOADABLES_PATH. The path /usr/lib/bash will be searched if BASH_LOADABLES_PATH is not set.
+'import' is its own builtin because it is unique in that it should not run in a new function context. Most other library functions
+should run in a new function context so it is convenient to have a bash shell function that starts with a conditional block that
+deferes to the bgCore builtin if its present and uses its bash implementation if not.
 
-### EXAMPLE OO SCRIPT:
-Example OO Bash...
-
-	$ cat /tmp/test.sh
-	#!/usr/bin/env bash
-	source /usr/lib/bg_core.sh
-	import bg_objects.sh  ;$L1;$L2
-
-	DeclareClass Animal
-	function Animal::__construct() {
-		this[name]="${1:-anonymous}"
-	}
-	function Animal::speak() {
-		echo "${this[name]} says 'generic animal sound'"
-	}
-
-	DeclareClass Dog : Animal
-	function Dog::speak() {
-		echo "${this[name]} says 'woof'"
-	}
-
-	DeclareClass Cat : Animal
-	function Cat::speak() {
-		echo "${this[name]} says 'meow'"
-	}
-
-	declare -A spot;     ConstructObject Dog spot     "Spot"
-	declare -A whiskers; ConstructObject Cat whiskers "Whiskers"
-
-
-	$spot.speak
-	$whiskers.speak
-
-	$ bash /tmp/test.sh
-	Spot says 'woof'
-	Whiskers says 'meow'
-
+The bgCore.so should be installed in the /usr/lib/bash system folder or in a folder that is listed in the BASH_LOADABLES_PATH environment
+variable.
 
 ### BUILDING:
 run ...
