@@ -153,6 +153,7 @@ ManifestRecord manifestGet(char* manFile, char* outputStr, ManifestRecord* targe
 		if (outputStr) {
 			char* outLine = manifestExpandOutStr(&rec, outputStr);
 			printf("%s\n",outLine);
+			xfree(outLine);
 		} else
 			break;
 	}

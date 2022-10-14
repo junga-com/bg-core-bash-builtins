@@ -84,4 +84,11 @@ extern int Object_fromJSON(WORD_LIST* args);
 extern int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel);
 
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// non-objects to JSON
+
+extern char* ShellVar_toJSON(SHELL_VAR* var, int indentLevel);
+extern char* ShellContext_toJSON(VAR_CONTEXT* cntx);
+
+
 #endif // _bg_json_H_

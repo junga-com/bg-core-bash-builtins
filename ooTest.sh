@@ -1,5 +1,39 @@
+# source /home/bobg/github/bg-CreateCommonSandbox/bg-dev/bg-debugCntr
+# bg-debugCntr vinstall /home/bobg/github/bg-CreateCommonSandbox
+# bg-debugCntr trace on:
+
+source /usr/lib/bg_core.sh
+import bg_plugins.sh  ;$L1;$L2
+#static::Plugin::_dumpAttributes
+#$Plugin::buildAwkDataTable | fsPipeToFile "$bgVinstalledPluginManifest"
+#exit
+
 source /usr/lib/bg_core.sh
 
+
+function a1()
+{
+	local myvar="a1"
+	a2
+	echo "myvar='$myvar'"
+}
+
+function a2()
+{
+	local myvar="a2"
+	a3
+	echo "myvar='$myvar'"
+}
+
+function a3()
+{
+	local myvar="a3"
+#	bgCore testAssertError segfault
+	echo "myvarA3='$myvar'"
+}
+
+bgtraceBreak
+a1
 exit
 
 # import bg_template.sh  ;$L1;$L2

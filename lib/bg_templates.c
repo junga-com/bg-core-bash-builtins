@@ -259,6 +259,7 @@ int templateExpandC(TemplateExpandOptions* pOpts, char* srcTemplate, char* dstFi
 	// if writing to a temp file, resolve it
 	if (tmpFilename) {
 		fsReplaceIfDifferent(tmpFilename, outFilename, cp_removeSrc | ((pOpts->mkdirFlag)?cp_mkdir:0));
+		unlink(tmpFilename);
 		xfree(tmpFilename); tmpFilename=NULL;
 		xfree(outFilename); outFilename=NULL;
 	}

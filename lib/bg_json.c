@@ -717,3 +717,141 @@ int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
 	xfree(sessionOID);
 	return EXECUTION_SUCCESS;
 }
+
+
+char* ShellVar_toJSON(SHELL_VAR* var, int indentLevel)
+{
+	// this pattern allows objDictionary to be shared among this and any recursive call that it spawns
+	// even though ShellVar_assocCreate will return an existing local var, it wont use one at a higher scope so we use ShellVar_find first
+	SHELL_VAR* objDictionary = ShellVar_find("objDictionary");
+	if (!objDictionary)
+		objDictionary = ShellVar_assocCreate("objDictionary");
+
+	// record that this object is being written to the json txt
+	//objDictionary[${_this[_OID]}]="sessionOID_${#objDictionary[@]}"
+	char* strCount = itos( ShellVar_assocSize(objDictionary) );
+	char* sessionOID = save2string("sessionOID_", strCount);
+	ShellVar_assocSet(objDictionary, var->name, sessionOID);
+	xfree(strCount);
+
+	// set this to a space to make the result be one line
+	char* fieldEnding="\n";
+
+	BGString jsonTxt; BGString_init(&jsonTxt, 60);
+	char* t;
+	int attribCount = 0;
+	switch (ShellVar_getType(var)) {
+		case rt_simple:
+			t = jsonEscape(var->value?var->value:"");
+			BGString_appendf(&jsonTxt,"", "\"%s\"", t);
+			xfree(t);
+		break;
+
+		case rt_array:
+			indentLevel++;
+			BGString_appendf(&jsonTxt,"", "[");
+
+			for (ARRAY_ELEMENT* el=ShellVar_arrayStart(var); el!=ShellVar_arrayEOL(var); el=el->next) {
+				BGString_appendf(&jsonTxt,"", "%s%s%*s",  (attribCount++ == 0)?"":",",  fieldEnding, indentLevel*3,"");
+
+				// print the start of the line, up to the <value>
+				printf("%*s", indentLevel*3, "");
+
+				t = jsonEscape(el->value);
+				BGString_appendf(&jsonTxt,"", "\"%s\"", t);
+				xfree(t);
+			}
+
+			indentLevel--;
+			if (attribCount>0)
+				BGString_appendf(&jsonTxt,"", "%s%*s", fieldEnding, indentLevel*3,"");
+			BGString_appendf(&jsonTxt,"", "]");
+		break;
+
+		case rt_set:
+			indentLevel++;
+			BGString_appendf(&jsonTxt,"", "{");
+
+			AssocSortedItr itr = {0};
+			BUCKET_CONTENTS* bVar;
+			AssocSortedItr_init(&itr, assoc_cell(var));
+			while ((bVar=AssocSortedItr_next(&itr))) {
+				char* name = bVar->key;
+				char* value = (char*)bVar->data;
+
+				BGString_appendf(&jsonTxt,"", "%s%s%*s",  (attribCount++ == 0)?"":",",  fieldEnding, indentLevel*3,"");
+
+				// print the start of the line, up to the <value>
+				printf("%*s", indentLevel*3, "");
+
+				t = jsonEscape(value);
+				BGString_appendf(&jsonTxt,"", "\"%s\": \"%s\"", name, t);
+			}
+
+			indentLevel--;
+			if (attribCount>0)
+				BGString_appendf(&jsonTxt,"", "%s%*s", fieldEnding, indentLevel*3,"");
+			BGString_appendf(&jsonTxt,"", "}");
+		break;
+
+		default:
+			BGString_appendf(&jsonTxt,"", "\"\"");
+	}
+	return jsonTxt.buf;
+}
+
+
+char* ShellContext_toJSON(VAR_CONTEXT* cntx)
+{
+	// this pattern allows objDictionary to be shared among this and any recursive call that it spawns
+	// even though ShellVar_assocCreate will return an existing local var, it wont use one at a higher scope so we use ShellVar_find first
+	SHELL_VAR* objDictionary = ShellVar_find("objDictionary");
+	if (!objDictionary)
+		objDictionary = ShellVar_assocCreate("objDictionary");
+
+	char tOpen='{', tClose='}';
+
+	// set this to a space to make the result be one line
+	char* fieldEnding="\n";
+
+	BGString jsonTxt; BGString_init(&jsonTxt, 500);
+
+	// start the object/array
+	BGString_appendf(&jsonTxt,"", "%c", tOpen);
+	int indentLevel=1;
+
+	int attribCount = 0;
+
+	BGString_appendf(&jsonTxt,"", "%s%s", (attribCount++ == 0)?"":",", fieldEnding);
+	BGString_appendf(&jsonTxt,"", "\"contextName\": \"%s\"", (cntx!=global_variables)?cntx->name:"GLOBAL");
+
+	// first do the system attributes if called for
+	AssocSortedItr itr = {0}; AssocSortedItr_init(&itr, cntx->table);
+	BUCKET_CONTENTS* bVar;
+	while ((bVar=AssocSortedItr_next(&itr))) {
+		char* name = bVar->key;
+		SHELL_VAR* vValue = (SHELL_VAR*)bVar->data;
+		//__bgtrace("!!! ctxToJson name='%s'  varname='%s'  type='%s'\n",  name, vValue->name, BGRetType_toString(ShellVar_getType(vValue)) );
+
+		// 'finish' the last attribute (or tOpen we wrote before the loop)
+		// we do it this way so that we can write the ',' only if required
+		BGString_appendf(&jsonTxt,"", "%s%s", (attribCount++ == 0)?"":",", fieldEnding);
+
+		// print the start of the line, up to the <value>
+		BGString_appendf(&jsonTxt,"", "%*s", indentLevel*3, "");
+		BGString_appendf(&jsonTxt,"", "\"%s\": ", name);
+
+		char* jsonValue = ShellVar_toJSON(vValue, indentLevel);
+		BGString_appendf(&jsonTxt,"", "%s", jsonValue);
+		xfree(jsonValue);
+	}
+	AssocSortedItr_free(&itr);
+
+	indentLevel--;
+	if (attribCount>0)
+		BGString_appendf(&jsonTxt,"", "%s%*s", fieldEnding, indentLevel*3,"");
+	BGString_appendf(&jsonTxt,"", "%c", tClose);
+
+	//__bgtrace("!!! ctxToJson Done = '%s'\n",  jsonTxt.buf);
+	return jsonTxt.buf;
+}

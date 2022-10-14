@@ -158,7 +158,9 @@ int matchFilter(char* filter, char* value)
 		fprintf(stderr, "error: invalid regex filter (%s)\n", filter);
 		return 1;
 	}
-	return regexec(&regex, value, 0, NULL, 0) == 0;
+	int result = regexec(&regex, value, 0, NULL, 0) == 0;
+	regfree(&regex);
+	return result;
 }
 
 

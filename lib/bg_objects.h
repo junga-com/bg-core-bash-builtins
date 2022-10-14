@@ -53,7 +53,7 @@ typedef struct _BashObj {
   SHELL_VAR* vVMT;
 
   // objRef state
-  char* refClass;
+  char refClass[200];
   int superCallFlag;
 
   // internal state
@@ -96,6 +96,7 @@ extern int      BashObj_initFromContext(BashObj* pObj);
 extern void     BashObj_initFromObjRef( BashObj* pObj, char* objRef);
 extern BashObj* BashObj_copy(           BashObj* that);
 extern BashObj* BashObj_find(           char* name, char* refClass, char* hierarchyLevel);
+extern void     BashObj_free(           BashObj* pObj);
 
 // making new instances
 extern BashObj* BashObj_makeNewObject( char* _CLASS, SHELL_VAR* vObjVar, ...);

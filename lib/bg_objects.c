@@ -33,6 +33,7 @@ void assertObjExpressionError(WORD_LIST* opts, char* fmt, ...)
 
 	WordList_free(args);
 
+	// this will also unwind the stack for this call
 	callFrames_longjump(36);
 }
 
@@ -235,10 +236,11 @@ void BashObj_makeVMT(BashObj* pObj)
 
 int BashObj_init(BashObj* pObj, char* name, char* refClass, char* hierarchyLevel)
 {
-	if (strlen(name) >200) assertError(NULL,"BashObj_init: name is too long (>200)\nname='%s'\n", name);
+	if (bgstrlen(name) >200) assertError(NULL,"BashObj_init: name is too long (>200)\nname='%s'\n", name);
 	int errFlag=0;
 
-	pObj->refClass=refClass;
+	if (bgstrlen(refClass) >199) assertError(NULL,"BashObj_init: refClass is too long (>200)\nrefClass='%s'\n", refClass);
+	strcpy(pObj->refClass, refClass?refClass:(name?name:""));
 	pObj->superCallFlag = (hierarchyLevel && strcmp(hierarchyLevel, "0")!=0);
 
 	pObj->vThis=ShellVar_find(name);
@@ -290,10 +292,15 @@ int BashObj_initFromContext(BashObj* pObj)
 	pObj->vThisSys = ShellVar_find("_this");
 	pObj->vCLASS = ShellVar_find("class");
 	pObj->vVMT = ShellVar_find("_VMT");
-	pObj->refClass = ShellVar_getS("_CLASS");
+
 	pObj->superCallFlag = atol(ShellVar_getS("_hierarchLevel"));
 	strncpy(pObj->ref , ShellVar_assocGet(pObj->vThisSys, "_Ref"), sizeof(pObj->ref)-1);
 	strncpy(pObj->name, pObj->vThis->name                        , sizeof(pObj->name)-1);
+
+	char* refClass = ShellVar_getS("_CLASS");
+	if (bgstrlen(refClass) >199) assertError(NULL,"BashObj_init: refClass is too long (>200)\nrefClass='%s'\n", refClass);
+	strcpy(pObj->refClass, refClass?refClass:pObj->name);
+
 	pObj->namerefMembers = NULL;
 	return EXECUTION_SUCCESS;
 }
@@ -335,11 +342,15 @@ void BashObj_initFromObjRef(BashObj* pObj, char* objRefStr)
 	xfree(refClass);
 }
 
+
+
 void BashObj_setupMethodCallContextDone(BashObj* this)
 {
 	//__bgtrace("!!! %p : FREEING namerefMembers in BashObj_setupMethodCallContextDone\n", this->namerefMembers);
-	if (this->namerefMembers)
+	if (this->namerefMembers) {
+		hash_flush(this->namerefMembers, NULL);
 		hash_dispose(this->namerefMembers);
+	}
 	this->namerefMembers = NULL;
 }
 
@@ -354,7 +365,8 @@ BashObj* BashObj_copy(BashObj* that)
 	this->vCLASS  = that->vCLASS    ;
 	this->vVMT    = that->vVMT      ;
 
-	this->refClass = that->refClass;
+	strcpy(this->refClass, that->refClass);
+
 	this->superCallFlag = that->superCallFlag;
 	this->namerefMembers = NULL;
 	return this;
@@ -365,6 +377,14 @@ BashObj* BashObj_find(char* name, char* refClass, char* hierarchyLevel)
 	BashObj* pObj = xmalloc(sizeof(BashObj));
 	BashObj_init(pObj, name, refClass, hierarchyLevel);
 	return pObj;
+}
+
+void BashObj_free(BashObj* pObj)
+{
+	if (pObj) {
+		BashObj_setupMethodCallContextDone(pObj);
+		xfree(pObj);
+	}
 }
 
 // this is a convenience function for C code to call ConstructObject which converts the C args to a WORD_LIST
@@ -471,7 +491,7 @@ BashObj* ConstructObject(WORD_LIST* args)
 	*newObj->name='\0';
 	*newObj->ref='\0';
 	newObj->vCLASS = vClass;
-	newObj->refClass=NULL;
+	*newObj->refClass='\0';
 	newObj->superCallFlag=0;
 	newObj->namerefMembers = NULL;
 
@@ -774,6 +794,7 @@ int BashObj_gotoMemberObj(BashObj* pObj, char* memberName, int allowOnDemandObjC
 		return 0;
 	}
 
+	// 2022-10 bobg: not sure why we need memberObj. seems that we should re-init pObj directly
 	BashObj_init(&memberObj, oRef.oid, pObj->refClass, pObj->superCallFlag ? "1":"0");
 
 	memcpy(pObj,&memberObj, sizeof(*pObj));
@@ -788,7 +809,7 @@ int BashObj_setupMethodCallContext(BashObj* pObj, BashObjectSetupMode mode, char
 		ShellVar_refCreateSet( "this"           , pObj->vThis->name             );
 		ShellVar_refCreateSet( "_this"          , pObj->vThisSys->name          );
 		ShellVar_refCreateSet( "static"         , pObj->vCLASS->name            );
-		ShellVar_refCreateSet( "refClass"       , (pObj->refClass) ? pObj->refClass : pObj->vCLASS->name );
+		ShellVar_refCreateSet( "refClass"       , (*pObj->refClass) ? pObj->refClass : pObj->vCLASS->name );
 		ShellVar_refCreateSet( "class"          , pObj->vCLASS->name            );
 		ShellVar_refCreateSet( "_VMT"           , pObj->vVMT->name              );
 
@@ -812,10 +833,10 @@ int BashObj_setupMethodCallContext(BashObj* pObj, BashObjectSetupMode mode, char
 							char* memOid = extractOID(item->data);
 							ShellVar_refCreateSet(item->key, memOid);
 							xfree(memOid);
-							assoc_insert(pObj->namerefMembers, item->key, "");
+							assoc_insert(pObj->namerefMembers, savestring(item->key), "");
 						} else if (strncmp(item->data, "heap_",5)==0) {
 							ShellVar_refCreateSet(item->key, item->data);
-							assoc_insert(pObj->namerefMembers, item->key, "");
+							assoc_insert(pObj->namerefMembers, savestring(item->key), "");
 						}
 					}
 				}
@@ -923,7 +944,7 @@ void DeclareClassEnd(char* className)
 
 	// ConstructObject Class "$className" "$className" "$baseClass" "${initData[@]}"
 	BashObj* pObj = ConstructObject(constructionArgs);
-	xfree(pObj);
+	BashObj_free(pObj);
 
 	char* tstr = save2string("static::",className);
 	SHELL_VAR* vClassDynCtor = ShellFunc_findWithSuffix(tstr, "::__construct");
@@ -934,8 +955,7 @@ void DeclareClassEnd(char* className)
 		BashObj* pNewClass = BashObj_find(className, NULL,0);
 		BashObj_setupMethodCallContext(pNewClass, sm_wholeShebang, NULL);
 //__bgtrace("!!! %p : FREEING namerefMembers in DeclareClassEnd\n", pNewClass->namerefMembers);
-		BashObj_setupMethodCallContextDone(pNewClass);
-		xfree(pNewClass);
+		BashObj_free(pNewClass);
 		ShellVar_refUnsetS("static");
 		ShellVar_refCreateSet("static", className);
 		ShellFunc_execute(vClassDynCtor, constructionArgs->next->next);
@@ -1170,7 +1190,6 @@ regex_t regex;
 int _bgclassCall(WORD_LIST* list)
 {
 	bgtrace1(1,"starting _bgclassCall\n", WordList_toString(list));
-//    begin_unwind_frame ("bgCore");
 
 	if (!list || list_length(list) < 3)
 		assertObjExpressionError(NULL, "Error - not enough arguments (%d). See usage..\n\n", (list)?list_length(list):0);
@@ -1234,6 +1253,7 @@ int _bgclassCall(WORD_LIST* list)
 	static char* pattern="((\\.unset|\\.exists|\\.isA|\\.getType|\\.getOID|\\.getRef|\\.toString|=new|)([[:space:]]|$)|([+]?=|::))(.*)?$";
 	static int regexInit;
 	if (!regexInit) {
+		regexInit = 1;
 		if (regcomp(&regex, pattern, REG_EXTENDED)) // |REG_ICASE
 			assertObjExpressionError(NULL,"error: invalid regex pattern (%s)\n", pattern);
 	}
@@ -1264,8 +1284,7 @@ int _bgclassCall(WORD_LIST* list)
 		_memberOp=savestringn(objSyntaxStart+matches[4].rm_so,(matches[4].rm_eo-matches[4].rm_so));
 	else
 		_memberOp=savestring("");
-//    add_unwind_protect(xfree,_memberOp);
-
+	add_unwind_protect(xfree,_memberOp);
 
 	// _chainedObjOrMember is the beginning of objSyntaxStart up to the start of the match (start of op)
 #   if bgtraceLevel >= 2
@@ -1301,10 +1320,17 @@ int _bgclassCall(WORD_LIST* list)
 	SHELL_VAR* vArgs = make_local_array_variable("_argsV",0);
 	WORD_LIST* methodArgs = WordList_copy(list);
 	WORD_LIST* methodArgsToFree = methodArgs;
+	add_unwind_protect(dispose_words, methodArgsToFree);
 	int argsNonEmpty=0;
 	if (matches[5].rm_so<matches[5].rm_eo) {
 		argsNonEmpty=1;
-		methodArgs = WordList_unshift(methodArgs, savestringn(objSyntaxStart+matches[5].rm_so,(matches[5].rm_eo-matches[5].rm_so)) );
+		char* tmpFront = savestringn(objSyntaxStart+matches[5].rm_so,(matches[5].rm_eo-matches[5].rm_so));
+		methodArgs = WordList_unshift(methodArgs, tmpFront);
+		xfree(tmpFront);
+		// this line resulted in a segfault. not sure why. dont we need to free the node we just added to the front?
+		//		methodArgsToFree = methodArgs;
+
+		// 2022-10 bobg: why couldn't we just use methodArgs in the calls to remember_args and assign_compound_array_list?
 		WORD_LIST argsList;
 		argsList.next=list;
 		argsList.word = xmalloc(sizeof(*argsList.word));
@@ -1313,6 +1339,7 @@ int _bgclassCall(WORD_LIST* list)
 
 		remember_args(&argsList,1);
 		assign_compound_array_list (vArgs, &argsList, 0);
+
 		xfree(argsList.word->word);
 		xfree(argsList.word);
 	} else {
@@ -1375,8 +1402,9 @@ int _bgclassCall(WORD_LIST* list)
 		} else {
 			// descend into the next member object if its not the last part
 			if (!isLastPart && !BashObj_gotoMemberObj(&objInstance, pCurPart, allowOnDemandObjCreation, &localErrno)) {
-				if (localErrno==EXECUTION_FAILURE)
-					return EXECUTION_FAILURE;
+				// 2022-10 bobg: commented this out. not sure why it was like this. tracking down valgrind mem leaks. this did not help but left it commented out
+				// if (localErrno==EXECUTION_FAILURE)
+				// 	return EXECUTION_FAILURE;
 				assertObjExpressionError(NULL,"error: '%s' is not a member object of '%s' but it is being dereferenced as if it is. dereference='%s'\n", pCurPart, objInstance.name, pNextPart);
 			}
 		}
@@ -1387,7 +1415,7 @@ int _bgclassCall(WORD_LIST* list)
 
 	// the loop iterated all but the last part and objInstance is now the object for which the last part is a member of
 	_rsvMemberName=savestring(pCurPart);
-//    add_unwind_protect(xfree,_rsvMemberName);
+	add_unwind_protect(xfree,_rsvMemberName);
 	*_chainedObjOrMemberEnd=saveCh;
 
 	// if its empty
@@ -1435,7 +1463,7 @@ int _bgclassCall(WORD_LIST* list)
 	}
 
 	char* _rsvMemberTypeStr = MemberTypeToString(_rsvMemberType, NULL, _rsvMemberValue);
-//    add_unwind_protect(xfree,_rsvMemberTypeStr);
+	add_unwind_protect(xfree,_rsvMemberTypeStr);
 
 	bgtrace1(2,"   _memberOp        ='%s'\n", (_memberOp)?_memberOp:"");
 	bgtrace1(2,"   _rsvMemberType   ='%s'\n", (_rsvMemberTypeStr)?_rsvMemberTypeStr:"");
@@ -1604,6 +1632,7 @@ int _bgclassCall(WORD_LIST* list)
 				assertObjExpressionError(NULL, "object syntax error. $obj::<methodname> is missing <methodname>");
 
 			// set these in case of error report
+			xfree(_rsvMemberName);
 			_rsvMemberName = methodArgs->word->word;
 			ShellVar_setS("_rsvMemberName",_rsvMemberName);
 
@@ -1855,7 +1884,8 @@ int _bgclassCall(WORD_LIST* list)
 			char* instanceName = save4string(objInstance.vThis->name,"[",_rsvMemberName,"]");
 			methodArgs = WordList_unshift(methodArgs, instanceName);
 			methodArgs = WordList_unshift(methodArgs, newClassName);
-			ConstructObject(methodArgs);
+			BashObj* pObj = ConstructObject(methodArgs);
+			BashObj_free(pObj);
 			xfree(instanceName);
 			xfree(newClassName);
 		break;
@@ -1892,14 +1922,15 @@ int _bgclassCall(WORD_LIST* list)
 	// cleanup before we leave
 //__bgtrace("!!! %p : FREEING namerefMembers in _bgclassCall\n", objInstance.namerefMembers);
 	BashObj_setupMethodCallContextDone(&objInstance);
-	WordList_free(methodArgsToFree);
-	xfree(_rsvMemberTypeStr);
-	xfree(_rsvMemberName);_rsvMemberName=NULL;
-	xfree(_memberExpression);_memberExpression=NULL;
-	xfree(_memberOp); _memberOp=NULL;
+	WordList_free(methodArgsToFree);                 remove_unwind_protect();
+	xfree(_rsvMemberTypeStr);                        remove_unwind_protect();
+	xfree(_rsvMemberName);_rsvMemberName=NULL;       remove_unwind_protect();
+	xfree(_memberExpression);_memberExpression=NULL; remove_unwind_protect();
+	xfree(_memberOp); _memberOp=NULL;                remove_unwind_protect();
 
 	return (exitCode);
 }
+//add_unwind_protect(xfree, _memberExpression);
 
 
 

@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include <stdc.h>
 #include <errno.h>
+#include <execinfo.h>
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -51,9 +52,47 @@ int __bgtrace(char* fmt, ...)
 void _bgtraceStack()
 {
 	SHELL_VAR* vFuncname = ShellVar_findGlobal("FUNCNAME");
+	SHELL_VAR* vSource = ShellVar_findGlobal("BASH_SOURCE");
+	SHELL_VAR* vLineno = ShellVar_findGlobal("BASH_LINENO");
 
-	__bgtrace("Stack: ");
-	for (ARRAY_ELEMENT* el=ShellVar_arrayStart(vFuncname); el!=ShellVar_arrayEOL(vFuncname); el=el->next)
-		__bgtrace("%s ", el->value);
+	char* firstLineno = ShellVar_getS("LINENO");
+
+	ARRAY_ELEMENT* elFuncname=ShellVar_arrayStart(vFuncname);
+	ARRAY_ELEMENT* elSource=ShellVar_arrayStart(vSource);
+	ARRAY_ELEMENT* elLineno=ShellVar_arrayStart(vLineno);
+
+	int maxSourceLen=0;
+	for (ARRAY_ELEMENT* el = ShellVar_arrayStart(vSource);  el != ShellVar_arrayEOL(vSource); el = el->next) {
+		char* t = strrchr(elSource->value,'/');
+		int len = strlen(t?t:elSource->value);
+		maxSourceLen = (len>maxSourceLen)? len : maxSourceLen;
+	}
+
+	__bgtrace("C stack trace:\n");
+	void *array[100];
+	int size = backtrace (array, 10);
+	char **strings = backtrace_symbols (array, size);
+	if (strings != NULL) {
+		for (int i = 0; i < size; i++) {
+			char* t = strrchr(strings[i], '/');
+			if (strstr(strings[i], "bgCore.so"))
+				__bgtrace("   %s\n", t?t+1:strings[i]);
+		}
+	}
+	free (strings);
+
+	__bgtrace("Shell Stack Trace: \n");
+	int first=1;
+	while ( elFuncname!=ShellVar_arrayEOL(vFuncname)) {
+		char* sLineno = (first) ? firstLineno : elLineno->value;
+		char* t = strrchr(elSource->value,'/');
+		__bgtrace("   %*s:%-4s: %s\n", -maxSourceLen, t?t+1:elSource->value, sLineno, elFuncname->value);
+
+		elFuncname=elFuncname->next;
+		elSource=elSource->next;
+		if (!first) elLineno=elLineno->next;
+		first=0;
+	}
+
 	__bgtrace("\n");
 }

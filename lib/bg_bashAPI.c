@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 
 #include "BGString.h"
+#include "bg_json.h"
 
 static SHELL_VAR* hash_lookup(char* name, HASH_TABLE* hashed_vars)
 {
@@ -696,7 +697,7 @@ char* BGCheckOpt(char* spec, WORD_LIST** pArgs)
 			case '=':
 			case '*':
 				// -f<filename> || --file=<filename> || -f <filename> || --file <filename>
-				if ((param[slen]=='=' || param[slen]=='\0' || slen==2) && strncmp(param,s, slen)==0) {
+				if ( paramLen>=slen && (param[slen]=='=' || param[slen]=='\0' || slen==2) && strncmp(param,s, slen)==0) {
 					if (param[slen]!='\0') {
 						if (param[slen]=='=')
 							slen++;
@@ -727,7 +728,8 @@ void outputValue(BGRetVar* retVar, char* value)
 		return;
 	}
 
-	char* delim = (retVar && retVar->delim) ? retVar->delim : ifs_firstchar(NULL);
+	char* ifsChar = NULL;
+	char* delim = (retVar && retVar->delim) ? retVar->delim : (ifsChar=ifs_firstchar(NULL));
 
 	switch (retVar->type) {
 		case rt_arrayRef:
@@ -767,6 +769,7 @@ void outputValue(BGRetVar* retVar, char* value)
 		case rt_echo: break; // this is handled at top , the same as if retVar is null
 		case rt_noop: break;
 	}
+	xfree(ifsChar);
 }
 
 void outputValues(BGRetVar* retVar, WORD_LIST* values)
@@ -836,6 +839,28 @@ void BGRetVar_init(BGRetVar* this)
 	this->delim = NULL;
 }
 
+BGRetType ShellVar_getType(SHELL_VAR* var)
+{
+	if (array_p(var))
+		return rt_array;
+	else if (assoc_p(var))
+		return rt_set;
+	else
+		return rt_simple;
+}
+
+char* BGRetType_toString(BGRetType rt)
+{
+	switch (rt) {
+		case rt_echo:      return "rt_echo";
+		case rt_simple:    return "rt_simple";
+		case rt_array:     return "rt_array";
+		case rt_set:       return "rt_set";
+		case rt_arrayRef:  return "rt_arrayRef";
+		case rt_noop:      return "rt_noop";
+	}
+}
+
 void BGRetVar_initFromVarname(BGRetVar* this, char* varname)
 {
 	if (!varname || !(*varname)) {
@@ -847,9 +872,11 @@ void BGRetVar_initFromVarname(BGRetVar* this, char* varname)
 		this->var = NULL;
 		this->arrayRef = varname;
 	} else {
-		this->type = rt_simple;
 		this->var = ShellVar_findUpVar(varname);
 		this->arrayRef = NULL;
+		this->type = ShellVar_getType(this->var);
+		if (this->type != rt_simple)
+			bgWarn("BGRetVar_initFromVarname : varname was found to be an array. This function expected to return a simple value. varname='%s'", varname);
 	}
 	this->appendFlag = 0;
 	this->delim = NULL;
@@ -908,44 +935,50 @@ int BGRetVar_initFromOpts(BGRetVar** retVar, WORD_LIST** pArgs)
 			(*retVar)->type = rt_arrayRef;
 			(*retVar)->arrayRef = optArg;
 		} else {
-			(*retVar)->type = rt_simple;
 			(*retVar)->var = ShellVar_findUpVar(optArg);
 			if (!(*retVar)->var) {
 				bgWarn("BGRetVar_initFromOpts(): Return variable -R '%s' does not exist in the calling scope\n\targs='%s'", optArg, WordList_toString(*pArgs));
 				(*retVar)->var = ShellVar_createGlobal(optArg);
 			}
+			(*retVar)->type = ShellVar_getType((*retVar)->var);
+			if ((*retVar)->type != rt_simple)
+				bgWarn("BGRetVar_initFromOpts(): Return variable -R '%s' in the calling scope is an array (use -A or -S for arrays)\n\targs='%s'", optArg, WordList_toString(*pArgs));
 		}
 
 	} else if ((optArg=BGCheckOpt("-A*|--array=*|--retArray=*", pArgs))) {
 		if (!(*retVar)) (*retVar) = BGRetVar_new();
 		found = 1;
-		(*retVar)->type = rt_array;
-		(*retVar)->var = ShellVar_findUpVar(optArg);
 		if (*optArg=='\0') {
 			(*retVar)->type = rt_noop;
 			bgWarn("BGRetVar_initFromOpts(): Return variable -A '%s' is empty. nothing will be returned\n\targs='%s'", optArg, WordList_toString(*pArgs));
-		} else if (!(*retVar)->var) {
+			return 1;
+		}
+		(*retVar)->var = ShellVar_findUpVar(optArg);
+		if (!(*retVar)->var) {
 			bgWarn("BGRetVar_initFromOpts(): Return variable -A '%s' does not exist in the calling scope\n\targs='%s'", optArg, WordList_toString(*pArgs));
 			(*retVar)->var = ShellVar_arrayCreateGlobal(optArg);
 		}
-		if (assoc_p((*retVar)->var))
-			assertError(NULL, "BGRetVar_initFromOpts(): Return variable -A '%s' is expected to be an array or a simple variable that can be converted to an array but it is an associative array which is not compatible. Use -S*|--retSet=* if you intend to return values in the indexes of an associative array\n",optArg);
-		else if (!array_p((*retVar)->var))
+		(*retVar)->type = ShellVar_getType((*retVar)->var);
+		if ((*retVar)->type == rt_simple) {
 			convert_var_to_array((*retVar)->var);
+			(*retVar)->type = rt_array;
+		} else if ((*retVar)->type != rt_array)
+			assertError(NULL, "BGRetVar_initFromOpts(): Return variable -A '%s' (%s) is expected to be an array or a simple variable that can be converted to an array but it is an associative array which is not compatible. Use -S*|--retSet=* if you intend to return values in the indexes of an associative array\n",optArg, BGRetType_toString((*retVar)->type));
 
 	} else if ((optArg=BGCheckOpt("-S*|--retSet=*", pArgs))) {
 		if (!(*retVar)) (*retVar) = BGRetVar_new();
 		found = 1;
-		(*retVar)->type = rt_set;
-		(*retVar)->var = ShellVar_findUpVar(optArg);
 		if (*optArg=='\0') {
 			(*retVar)->type = rt_noop;
 			bgWarn("BGRetVar_initFromOpts(): Return variable -S '%s' is empty. nothing will be returned\n\targs='%s'", optArg, WordList_toString(*pArgs));
-		} else if (!(*retVar)->var) {
+		}
+		(*retVar)->var = ShellVar_findUpVar(optArg);
+		if (!(*retVar)->var) {
 			bgWarn("BGRetVar_initFromOpts(): Return variable -S '%s' does not exist in the calling scope\n\targs='%s'", optArg, WordList_toString(*pArgs));
 			(*retVar)->var = ShellVar_assocCreateGlobal(optArg);
 		}
-		if (!assoc_p((*retVar)->var))
+		(*retVar)->type = ShellVar_getType((*retVar)->var);
+		if ((*retVar)->type != rt_set)
 			assertError(NULL, "BGRetVar_initFromOpts(): Return variable '%s' is expected to be an associative array (local -A)\n",optArg);
 
 	} else if ((optArg=BGCheckOpt("-e|--echo", pArgs))) {
@@ -1148,6 +1181,8 @@ WORD_LIST* fsExpandFilesC(
 		findPruneExpr = WordList_join(findPruneExpr,    WordList_fromString("')' ')' -prune -o "        ,IFS,0));
 	}
 
+	xfree(commonPrefix);
+
 	// remove starting points that do not exist so that the 'find' util does not complain about them
 	WORD_LIST** ppLast = &findStartingPoints;
 	for (WORD_LIST* p=findStartingPoints; p; ) {
@@ -1199,6 +1234,7 @@ WORD_LIST* fsExpandFilesC(
 	// execute the cmdline. parse_and_execute will free the cmdline string
 	findArgs = WordList_unshift(findArgs, "find");
 	char* cmdline = WordList_toString(findArgs);
+	WordList_free(findArgs);
 
 	if (0!=parse_and_execute(cmdline, "bgCore", SEVAL_NOFREE | SEVAL_NOHIST | SEVAL_RESETLINE | SEVAL_NOHISTEXP | SEVAL_NONINT)) {
 		__bgtrace("bgfind cmdline='%s'\n", cmdline);
@@ -1241,6 +1277,8 @@ WORD_LIST* fsExpandFilesC(
 	xfree(buf);
 
 	// TODO: rm the tmp files
+	unlink(tmpFilename);
+	unlink(errOut);
 	xfree(tmpFilename);
 	xfree(errOut);
 
@@ -1447,10 +1485,11 @@ SHELL_VAR* varNewHeapVar(char* attributes)
 	if (!attributes || !strcasestr(attributes,"a"))
 		retVal = ShellVar_createGlobal(buf);
 	else if (strstr(attributes, "a"))
-		retVal = ShellVar_arrayCreateGlobal(buf);
+//		retVal = ShellVar_arrayCreateGlobal(buf);
+		retVal = make_new_array_variable(buf);
 	else
-		retVal = ShellVar_assocCreateGlobal(buf);
-
+//		retVal = ShellVar_assocCreateGlobal(buf);
+		retVal = make_new_assoc_variable(buf);
 	xfree(buf);
 	return retVal;
 }

@@ -269,7 +269,10 @@ extern void      BGRetVar_startOutput(BGRetVar* retVar);
 extern void      outputValue(BGRetVar* retVar, char* value);
 extern void      outputValues(BGRetVar* retVar, WORD_LIST* values);
 
-extern char* BGCheckOpt(char* spec, WORD_LIST** pArgs);
+extern char*     BGCheckOpt(char* spec, WORD_LIST** pArgs);
+
+BGRetType        ShellVar_getType(SHELL_VAR* var);
+char*            BGRetType_toString(BGRetType rt);
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

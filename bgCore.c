@@ -41,6 +41,12 @@ void testAssertError(WORD_LIST* args)
 	__bgtrace("testAssertError STARTING (%s)\n", WordList_toString(args));
 	printf("testAssertError STARTING (%s)\n", WordList_toString(args));
 
+	if (args && strcmp("segfault", args->word->word)) {
+		char* f=NULL;
+		*f='\0';
+	}
+
+
 	if (args)
 		assertError(WordList_fromString("-v name",IFS,0), "this is a test error '%s'", "hooters");
 	// SHELL_VAR* func = ShellFunc_find("myCode");
@@ -73,8 +79,6 @@ int bgCore_builtin(WORD_LIST* list)
 		return (EX_USAGE);
 	}
 
-	assertError_init();
-
 	// if anything calls assertError(), it will either terminate the PID and the rest of the builtin will not run, or if there is
 	// a Try: / Catch: block in bash that is catching the error, it will longjump back to here and continue to execute the true
 	// condition which will exit back to the parser flow.
@@ -86,41 +90,48 @@ int bgCore_builtin(WORD_LIST* list)
 		bgtracePop();
 		bgtrace2(1,"### %d END-JMP %s\n", callFrames_getPos()+1, label);
 		ret = (EXECUTION_FAILURE);
+	}
 
-	} else {
+	else {
 		// normal setjmp path...
 
 		// bgCore ping
 		if (strcmp("ping", list->word->word)==0) {
 			ret = EXECUTION_SUCCESS;
+		}
 
 
 		// ### Objects ###############################################################################################################
 
 		// bgCore IsAnObjRef
-		} else if (strcmp("IsAnObjRef", list->word->word)==0) {
+		else if (strcmp("IsAnObjRef", list->word->word)==0) {
 			ret = IsAnObjRef(list->next) ? 0 : 1;
+		}
 
 		// bgCore ConstructObject
-		} else if (strcmp("ConstructObject", list->word->word)==0) {
+		else if (strcmp("ConstructObject", list->word->word)==0) {
 			BashObj* pObj = ConstructObject(list->next);
-			xfree(pObj);
+			BashObj_free(pObj);
 			ret = EXECUTION_SUCCESS;
+		}
+
 
 		// bgCore DeclareClassEnd
-		} else if (strcmp("DeclareClassEnd", list->word->word)==0) {
+		else if (strcmp("DeclareClassEnd", list->word->word)==0) {
 			list=list->next;
 			DeclareClassEnd(list->word->word);
 			ret = EXECUTION_SUCCESS;
+		}
 
 		// bgCore _bgclassCall <oid> <refClass> <hierarchyLevel> |<objSyntaxStart> [<p1,2> ... <pN>]
-		} else if (strcmp("_bgclassCall", list->word->word)==0) {
+		else if (strcmp("_bgclassCall", list->word->word)==0) {
 			// __bgtrace("\n#### %s\n", WordList_toString(list));
 			// _bgtraceStack();
 			ret = _bgclassCall(list->next);
+		}
 
 		// bgCore _classUpdateVMT [-f|--force] <className>
-		} else if (strcmp("_classUpdateVMT", list->word->word)==0) {
+		else if (strcmp("_classUpdateVMT", list->word->word)==0) {
 			list=list->next;
 			int forceFlag=0;
 			while (list && *list->word->word=='-') {
@@ -133,10 +144,11 @@ int bgCore_builtin(WORD_LIST* list)
 				assertError(NULL, "<className> is a required argument to _classUpdateVMT");
 
 			ret = _classUpdateVMT(list->word->word, forceFlag);
+		}
 
 
 		// bgCore Object_getIndexes [--sys|--real|--all]
-		} else if (strcmp("Object_getIndexes", list->word->word)==0 || strcmp("Object::getIndexes", list->word->word)==0 || strcmp("Object::getAttributes", list->word->word)==0) {
+		else if (strcmp("Object_getIndexes", list->word->word)==0 || strcmp("Object::getIndexes", list->word->word)==0 || strcmp("Object::getAttributes", list->word->word)==0) {
 			list = list->next;
 			ToJSONMode mode = tj_real;
 			BGRetVar* retVar = BGRetVar_new();
@@ -159,17 +171,19 @@ int bgCore_builtin(WORD_LIST* list)
 
 			xfree(retVar);
 			ret = EXECUTION_SUCCESS;
+		}
 
 
 
 		// ### JSON ##################################################################################################################
 
 		// bgCore Object_fromJSON
-		} else if (strcmp("Object_fromJSON", list->word->word)==0 || strcmp("Object::fromJSON", list->word->word)==0) {
+		else if (strcmp("Object_fromJSON", list->word->word)==0 || strcmp("Object::fromJSON", list->word->word)==0) {
 			ret = Object_fromJSON(list->next);
+		}
 
 		// bgCore Object_toJSON
-		} else if (strcmp("Object_toJSON", list->word->word)==0 || strcmp("Object::toJSON", list->word->word)==0) {
+		else if (strcmp("Object_toJSON", list->word->word)==0 || strcmp("Object::toJSON", list->word->word)==0) {
 			list = list->next;
 			ToJSONMode mode = tj_real;
 			int indentLevel = 0;
@@ -186,18 +200,20 @@ int bgCore_builtin(WORD_LIST* list)
 
 			ret = Object_toJSON(&this, mode, indentLevel);
 			printf("\n");
+		}
 
 
 		// bgCore ConstructObjectFromJson
-		} else if (strcmp("ConstructObjectFromJson", list->word->word)==0) {
+		else if (strcmp("ConstructObjectFromJson", list->word->word)==0) {
 			ret = ConstructObjectFromJson(list->next);
+		}
 
 
 		// ### MISC ##################################################################################################################
 
 
 		// bgCore varOutput
-		} else if (strcmp("varOutput", list->word->word)==0 || strcmp("outputValue", list->word->word)==0) {
+		else if (strcmp("varOutput", list->word->word)==0 || strcmp("outputValue", list->word->word)==0) {
 			list=list->next;
 			BGRetVar* retVar = BGRetVar_new();
 			while (list && (*(list->word->word) == '-' || *(list->word->word) == '+')) {
@@ -210,10 +226,11 @@ int bgCore_builtin(WORD_LIST* list)
 			if (retVar)
 				xfree(retVar);
 			ret = EXECUTION_SUCCESS;
+		}
 
 
 		// bgCore findInLibPaths
-		} else if (strcmp("findInLibPaths", list->word->word)==0) {
+		else if (strcmp("findInLibPaths", list->word->word)==0) {
 			list=list->next;
 			char* foundPath = findInLibPaths(list->word->word);
 			list=list->next;
@@ -222,9 +239,11 @@ int bgCore_builtin(WORD_LIST* list)
 			else
 				printf("%s\n",foundPath);
 			ret = (foundPath && strcmp("",foundPath)!=0);
+		}
 
+		// OBSOLETE? import gets its own builtin instead of reusing "bgCore import..."
 		// bgCore import <scriptName>
-		} else if (strcmp("import", list->word->word)==0) {
+		else if (strcmp("import", list->word->word)==0) {
 			list = list->next;
 			char* param = (list) ? list->word->word : NULL;
 			int importFlags = 0;
@@ -254,10 +273,11 @@ int bgCore_builtin(WORD_LIST* list)
 					printf("%s\n",scriptPath);
 			}
 			if (scriptPath) xfree(scriptPath);
+		}
 
 
 		// bgCore manifestGet [-p|--pkg=<pkgMatch>] [-o|--output='$n'] <assetTypeMatch> <assetNameMatch>
-		} else if (strcmp("manifestGet", list->word->word)==0) {
+		else if (strcmp("manifestGet", list->word->word)==0) {
 			list = list->next;
 			char* param = (list) ? list->word->word : NULL;
 			char* pkgMatch = NULL;
@@ -291,9 +311,10 @@ int bgCore_builtin(WORD_LIST* list)
 			if (target.assetName) xfree(target.assetName);
 
 			ret = EXECUTION_SUCCESS;
+		}
 
 
-		} else if (strcmp("pathGetCommon", list->word->word)==0) {
+		else if (strcmp("pathGetCommon", list->word->word)==0) {
 			list=list->next;
 			char* retVar = NULL;
 			char* optArg;
@@ -312,59 +333,82 @@ int bgCore_builtin(WORD_LIST* list)
 			else
 				printf("%s\n", retVal);
 			ret = EXECUTION_SUCCESS;
+		}
 
 		// bgCore fsExpandFiles
-		} else if (strcmp("fsExpandFiles", list->word->word)==0) {
+		else if (strcmp("fsExpandFiles", list->word->word)==0) {
 			list = list->next;
 			ret = fsExpandFiles(list);
+		}
 
 		// bgCore templateExpandStr
-		} else if (strcmp("templateExpandStr", list->word->word)==0) {
+		else if (strcmp("templateExpandStr", list->word->word)==0) {
 			list = list->next;
 			ret = templateExpandStr(list);
+		}
 
 		// bgCore templateExpand
-		} else if (strcmp("templateExpand", list->word->word)==0) {
+		else if (strcmp("templateExpand", list->word->word)==0) {
 			list = list->next;
 			ret = templateExpand(list);
+		}
 
 		// bgCore templateFind
-		} else if (strcmp("templateFind", list->word->word)==0) {
+		else if (strcmp("templateFind", list->word->word)==0) {
 			list = list->next;
 			ret = templateFind(list);
+		}
 
 		// ### ini ###############################################################################################################
 
 		// bgCore iniParamGet
-		} else if (strcmp("iniParamGet", list->word->word)==0) {
+		else if (strcmp("iniParamGet", list->word->word)==0) {
 			list = list->next;
 			ret = iniParamGet(list);
+		}
 
 		// bgCore iniParamSet
-		} else if (strcmp("iniParamSet", list->word->word)==0) {
+		else if (strcmp("iniParamSet", list->word->word)==0) {
 			list = list->next;
 			ret = iniParamSet(list);
+		}
 
 
 		// ### Debugging and tests ##################################################################################################################
 
 		// bgCore ShellContext_dump
-		} else if (strcmp("ShellContext_dump", list->word->word)==0) {
+		else if (strcmp("ShellContext_dump", list->word->word)==0) {
 			list=list->next;
 			ShellContext_dump(shell_variables, (list!=NULL));
 			//ShellContext_dump(global_variables, (list!=NULL));
 			ret = EXECUTION_SUCCESS;
+		}
 
+		// bgCore dbgVars <retVar> <stackPosition>
+		else if (strcmp("dbgVars", list->word->word)==0) {
+			list=list->next;
+			BGRetVar retVar; BGRetVar_initFromVarname(&retVar, list->word->word);
+			list=list->next;
+			int stackPosition = atoi(list->word->word);
+
+			VAR_CONTEXT* cntx = global_variables;
+			for (int i=0; i<stackPosition; i++)
+				cntx = (cntx && cntx->up)?cntx->up:cntx;
+
+			char* jsonTxt = ShellContext_toJSON(cntx);
+			outputValue(&retVar, jsonTxt);
+			xfree(jsonTxt);
+			ret = EXECUTION_SUCCESS;
+		}
 
 		// bgCore testAssertError
-		} else if (strcmp("testAssertError", list->word->word)==0) {
-			//char* foo = NULL;
-			//if (*foo=='\0') printf("hoots\n");
+		else if (strcmp("testAssertError", list->word->word)==0) {
 			testAssertError(list->next);
 			ret = EXECUTION_SUCCESS;
+		}
 
 		// bgCore transTest
-		} else if (strcmp("transTest", list->word->word)==0) {
+		else if (strcmp("transTest", list->word->word)==0) {
 			list = list->next;
 
 			SHELL_VAR* vAssoc = ShellVar_find(list->word->word);
@@ -374,10 +418,10 @@ int bgCore_builtin(WORD_LIST* list)
 				printf("%s\n",pEl->key);
 			}
 			AssocSortedItr_free(&itr);
+		}
 
 
-
-		} else {
+		else {
 			assertError(NULL, "error: command not recognized cmd='%s'\n", (list && list->word)?list->word->word:"");
 		}
 

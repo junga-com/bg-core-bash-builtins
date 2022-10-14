@@ -691,6 +691,11 @@ int iniParamGet(WORD_LIST* args)
 		printf("%s\n",bgstr(value));
 	}
 
+	xfree(iniFilenameSpec);
+	xfree(targetSection);
+	xfree(targetName);
+	xfree(defValue);
+
 	xfree(value);
 	return iniScheme.exitCode;
 }
