@@ -1,14 +1,93 @@
-# source /home/bobg/github/bg-CreateCommonSandbox/bg-dev/bg-debugCntr
-# bg-debugCntr vinstall /home/bobg/github/bg-CreateCommonSandbox
-# bg-debugCntr trace on:
+#!/usr/bin/env bash
 
 source /usr/lib/bg_core.sh
-import bg_plugins.sh  ;$L1;$L2
-#static::Plugin::_dumpAttributes
-#$Plugin::buildAwkDataTable | fsPipeToFile "$bgVinstalledPluginManifest"
-#exit
 
-source /usr/lib/bg_core.sh
+trap 'echo "one"
+echo "two"' EXIT
+
+# gawk '
+# 	$1=="trap" && $2=="--" {
+# 		pid = $4
+# 		sig = $5
+# 		handler = spintf("%s", gensub(/^[^-]*--[[:space:]]*'\''/,"", $0) );
+# 		next;
+# 	}
+# 	{
+# 		handler = spintf("%s\n%s", handler, gensub(/^[^-]*--[[:space:]]*'\''/,"", $0) );
+# 	}
+# 	end
+# ' /tmp/trap.txt
+# exit
+
+function f1()
+{
+	echo "i am f1"
+}
+
+function f2()
+{
+	local a
+	echo "i am f2"
+	f1
+}
+
+function f3()
+{
+	local b
+	echo "i am f3"
+	f2
+}
+
+function foo()
+{
+	local c
+	f3
+	echo foo1
+	echo foo2
+}
+
+echo $$
+bgtraceBreak
+echo "before"
+foo
+#var="$(foo)"
+echo "after"
+exit
+
+echo $$
+count=0
+while true; do
+	if (( (count++ % 15) == 0 )); then
+		echo "still going... $count"
+	fi
+	sleep 1
+done
+exit
+
+
+import bg_objects.sh ;$L1;$L2
+declare -n obj; ConstructObject Object obj
+$obj.foo=5
+$obj.array=new Array
+
+$obj.toString
+$obj.foo.toString
+$obj.foo.toString --title
+$obj.foo.toString --title=
+$obj.foo.toString --title=foo
+$obj.foo.toString --title=DifferentLable
+$obj.array.toString
+$obj.array.toString --title
+$obj.array[0]="hiya"
+$obj.array.toString
+$obj.getIndexes.toString
+$obj.getIndexes.toString
+$obj.dontExist.toString --title
+$obj.dontExist.toString
+$obj[dontExist].toString
+$obj.::dontExist.toString
+$obj.Object::dontExist.toString
+exit
 
 
 function a1()

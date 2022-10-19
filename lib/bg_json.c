@@ -16,18 +16,17 @@ char* jsonEscape(char* s)
 	char* cOut=sOut;
 	for (char* c=s; c && *c; c++) {
 		switch (*c) {
-			case '\\':
-			case '"':
-			case '/':
-			case '\b':
-			case '\f':
-			case '\n':
-			case '\r':
-			case '\t':
-				*cOut++='\\';
-				break;
+			case '\\': *cOut++='\\'; *cOut++='\\'; break;
+			case '"':  *cOut++='\\'; *cOut++='"'; break;
+			case '/':  *cOut++='\\'; *cOut++='/'; break;
+			case '\b': *cOut++='\\'; *cOut++='b'; break;
+			case '\f': *cOut++='\\'; *cOut++='f'; break;
+			case '\n': *cOut++='\\'; *cOut++='n'; break;
+			case '\r': *cOut++='\\'; *cOut++='r'; break;
+			case '\t': *cOut++='\\'; *cOut++='t'; break;
+
+			default:   *cOut++=*c;
 		}
-		*cOut++=*c;
 	}
 	*cOut++='\0';
 	return sOut;

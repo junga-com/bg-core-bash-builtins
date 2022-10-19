@@ -203,6 +203,16 @@ int bgCore_builtin(WORD_LIST* list)
 		}
 
 
+		// bgCore arrayToJSON <inVar> <outVar>
+		else if (strcmp("arrayToJSON", list->word->word)==0 || strcmp("Object::toJSON", list->word->word)==0) {
+			list = list->next;
+			SHELL_VAR* vInVar  = ShellVar_find(list->word->word); list = list->next;
+			BGRetVar retVar; BGRetVar_initFromVarname(&retVar, list->word->word);
+			char* jsonValue = ShellVar_toJSON(vInVar, 0);
+			outputValue(&retVar, jsonValue);
+			xfree(jsonValue);
+		}
+
 		// bgCore ConstructObjectFromJson
 		else if (strcmp("ConstructObjectFromJson", list->word->word)==0) {
 			ret = ConstructObjectFromJson(list->next);
