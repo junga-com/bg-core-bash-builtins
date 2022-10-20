@@ -193,6 +193,12 @@ extern WORD_LIST* WordList_copy(WORD_LIST* src);
 extern WORD_LIST* WordList_copyR(WORD_LIST* src);
 extern WORD_LIST* WordList_join(WORD_LIST* args1, WORD_LIST* args2);
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// WordDesc
+// native WORD_DESC functions are mostly in make_cmd.h
+
+// this can be used to single and double quote the word or to add surounding {} or [] or ()
+extern WORD_DESC* WordDesc_surroundWord(WORD_DESC* w, char chStart, char chEnd);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // AssocItr

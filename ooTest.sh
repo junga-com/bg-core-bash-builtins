@@ -2,8 +2,8 @@
 
 source /usr/lib/bg_core.sh
 
-trap 'echo "one"
-echo "two"' EXIT
+trap 'echo "EXIT one"
+echo "EXIT two"' EXIT
 
 # gawk '
 # 	$1=="trap" && $2=="--" {

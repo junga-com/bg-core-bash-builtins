@@ -732,12 +732,13 @@ char* ShellVar_toJSON(SHELL_VAR* var, int indentLevel)
 	char* sessionOID = save2string("sessionOID_", strCount);
 	ShellVar_assocSet(objDictionary, var->name, sessionOID);
 	xfree(strCount);
+	xfree(sessionOID);
 
 	// set this to a space to make the result be one line
 	char* fieldEnding="\n";
 
 	BGString jsonTxt; BGString_init(&jsonTxt, 60);
-	char* t;
+	char* t = NULL;
 	int attribCount = 0;
 	switch (ShellVar_getType(var)) {
 		case rt_simple:
@@ -753,8 +754,8 @@ char* ShellVar_toJSON(SHELL_VAR* var, int indentLevel)
 			for (ARRAY_ELEMENT* el=ShellVar_arrayStart(var); el!=ShellVar_arrayEOL(var); el=el->next) {
 				BGString_appendf(&jsonTxt,"", "%s%s%*s",  (attribCount++ == 0)?"":",",  fieldEnding, indentLevel*3,"");
 
-				// print the start of the line, up to the <value>
-				printf("%*s", indentLevel*3, "");
+				// append the start of the line, up to the <value>
+				BGString_appendf(&jsonTxt,"", "%*s", indentLevel*3, "");
 
 				t = jsonEscape(el->value);
 				BGString_appendf(&jsonTxt,"", "\"%s\"", t);
@@ -780,12 +781,14 @@ char* ShellVar_toJSON(SHELL_VAR* var, int indentLevel)
 
 				BGString_appendf(&jsonTxt,"", "%s%s%*s",  (attribCount++ == 0)?"":",",  fieldEnding, indentLevel*3,"");
 
-				// print the start of the line, up to the <value>
-				printf("%*s", indentLevel*3, "");
+				// append the start of the line, up to the <value>
+				BGString_appendf(&jsonTxt,"", "%*s", indentLevel*3, "");
 
 				t = jsonEscape(value);
 				BGString_appendf(&jsonTxt,"", "\"%s\": \"%s\"", name, t);
+				xfree(t);
 			}
+			AssocSortedItr_free(&itr);
 
 			indentLevel--;
 			if (attribCount>0)
@@ -836,7 +839,7 @@ char* ShellContext_toJSON(VAR_CONTEXT* cntx)
 		// we do it this way so that we can write the ',' only if required
 		BGString_appendf(&jsonTxt,"", "%s%s", (attribCount++ == 0)?"":",", fieldEnding);
 
-		// print the start of the line, up to the <value>
+		// append the start of the line, up to the <value>
 		BGString_appendf(&jsonTxt,"", "%*s", indentLevel*3, "");
 		BGString_appendf(&jsonTxt,"", "\"%s\": ", name);
 

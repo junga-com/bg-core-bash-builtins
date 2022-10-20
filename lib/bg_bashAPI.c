@@ -464,6 +464,27 @@ WORD_LIST* WordList_join(WORD_LIST* args1, WORD_LIST* args2)
 	return args1;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// WordDesc
+// native WORD_DESC functions are mostly in make_cmd.h
+
+WORD_DESC* WordDesc_surroundWord(WORD_DESC* w, char chStart, char chEnd)
+{
+	// "bob"
+	// 0123456789
+	//          .
+	char* t = w->word;
+	int len = bgstrlen(t);
+	w->word = xmalloc(len+3); if (!w->word) assertError(NULL, "xmalloc failed in WordDesc_surroundWord");
+	*w->word = chStart;
+	if (t) {
+		strcpy(w->word+1, t);
+	}
+	*(w->word+len+1) = chEnd;
+	*(w->word+len+2) = '\0';
+	xfree(t);
+	return w;
+}
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1097,8 +1118,11 @@ WORD_LIST* fsExpandFilesC(
 		fTypeOpt = WordList_unshift(fTypeOpt, "-type");
 	}
 
-	if (!(flags&ef_alreadyExpanded))
+	if (!(flags&ef_alreadyExpanded)) {
+		WORD_LIST* tList = findStartingPoints;
 		findStartingPoints = expand_words(findStartingPoints);
+		WordList_free(tList);
+	}
 
 	WORD_LIST* recursiveOpt = (recurseFlag) ? NULL : WordList_fromString("-maxdepth 0", IFS,0);
 
@@ -1184,6 +1208,7 @@ WORD_LIST* fsExpandFilesC(
 	xfree(commonPrefix);
 
 	// remove starting points that do not exist so that the 'find' util does not complain about them
+	// add quotes to the ones that are left now that they are expanded
 	WORD_LIST** ppLast = &findStartingPoints;
 	for (WORD_LIST* p=findStartingPoints; p; ) {
 		if (!fsExists(p->word->word)) {
@@ -1194,6 +1219,7 @@ WORD_LIST* fsExpandFilesC(
 			WordList_free(tmpP);
 		} else {
 			ppLast = &(p->next);
+			WordDesc_surroundWord(p->word,'"','"');
 			p=p->next;
 		}
 	}
