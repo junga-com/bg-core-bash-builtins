@@ -5,19 +5,9 @@ source /usr/lib/bg_core.sh
 trap 'echo "EXIT one"
 echo "EXIT two"' EXIT
 
-# gawk '
-# 	$1=="trap" && $2=="--" {
-# 		pid = $4
-# 		sig = $5
-# 		handler = spintf("%s", gensub(/^[^-]*--[[:space:]]*'\''/,"", $0) );
-# 		next;
-# 	}
-# 	{
-# 		handler = spintf("%s\n%s", handler, gensub(/^[^-]*--[[:space:]]*'\''/,"", $0) );
-# 	}
-# 	end
-# ' /tmp/trap.txt
-# exit
+echo $$
+bgtraceBreak
+bgCore ping
 
 function f1()
 {
@@ -33,7 +23,10 @@ function f2()
 
 function f3()
 {
-	local b
+	local b=1
+	local ary=("one", "two", "three")
+	local -A assoc=( ["one"]=1, ["two"]=2, ["three"]=3)
+	bgCore dbgVars "" 3
 	echo "i am f3"
 	f2
 }
@@ -46,8 +39,6 @@ function foo()
 	echo foo2
 }
 
-echo $$
-bgtraceBreak
 echo "before"
 foo
 #var="$(foo)"

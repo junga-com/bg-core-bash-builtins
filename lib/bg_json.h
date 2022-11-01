@@ -88,7 +88,12 @@ extern int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel);
 // non-objects to JSON
 
 extern char* ShellVar_toJSON(SHELL_VAR* var, int indentLevel);
+
+// returns the context as one logical JSON object
 extern char* ShellContext_toJSON(VAR_CONTEXT* cntx);
+
+// returns the context as an array of variable objects (i.e. {name,value,type...})
+extern char* ShellContext_dumpJSON(VAR_CONTEXT* cntx);
 
 
 #endif // _bg_json_H_

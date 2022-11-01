@@ -849,12 +849,12 @@ int BashObj_setupMethodCallContext(BashObj* pObj, BashObjectSetupMode mode, char
 		// '_bgclassCall <pObj> <classFrom_METHOD> 1 |'
 		// _METHOD=<className>::<method>
 		BGString superObjRef;  BGString_init(&superObjRef, 50);
-		BGString_append(&superObjRef, "_bgclassCall ",NULL);
-		BGString_append(&superObjRef, pObj->vThis->name,NULL);
+		BGString_append(&superObjRef,NULL, "_bgclassCall ");
+		BGString_append(&superObjRef,NULL, pObj->vThis->name);
 		char* mClass=_METHOD;
 		char* mClassEnd=mClass; while (*mClassEnd && (*mClassEnd!=':' || *(mClassEnd+1)!=':') ) mClassEnd++;
-		BGString_appendn(&superObjRef, mClass, (mClassEnd-mClass)," ");
-		BGString_append(&superObjRef, " 1 | ",NULL);
+		BGString_appendn(&superObjRef," ", mClass, (mClassEnd-mClass));
+		BGString_append(&superObjRef,NULL, " 1 | ");
 
 		ShellVar_createSet("super", superObjRef.buf);
 		BGString_free(&superObjRef);
@@ -1092,7 +1092,7 @@ int _classUpdateVMT(char* className, int forceFlag)
 				strcpy(methodBase, "_method");
 				strcat(methodBase, funcList[i]->name+prefix1Len-2);
 				ShellVar_assocSet(class.vVMT, methodBase, funcList[i]->name);
-				BGString_append(&methodsStrList, funcList[i]->name, "\n");
+				BGString_append(&methodsStrList, "\n", funcList[i]->name);
 				xfree(methodBase);
 			}
 			if (strncmp(funcList[i]->name, prefix2,prefix2Len)==0) {
@@ -1101,7 +1101,7 @@ int _classUpdateVMT(char* className, int forceFlag)
 				strcpy(staticBase, "_static");
 				strcat(staticBase, funcList[i]->name+prefix2Len-2);
 				ShellVar_assocSet(class.vVMT, staticBase, funcList[i]->name);
-				BGString_append(&staticMethodsStrList, funcList[i]->name, "\n");
+				BGString_append(&staticMethodsStrList, "\n", funcList[i]->name);
 				xfree(staticBase);
 			}
 		}
@@ -1899,7 +1899,7 @@ int _bgclassCall(WORD_LIST* list)
 				assertObjExpressionError(NULL, "+= direct object assignment (as opposed to member variable assignment) is not yet supported");
 			BGString buf; BGString_initFromStr(&buf, BashObj_getMemberValue(&objInstance, _rsvMemberName));
 			retVal = WordList_toString(methodArgs);
-			BGString_append(&buf, retVal, "");
+			BGString_append(&buf, "", retVal);
 			BashObj_setMemberValue(&objInstance, _rsvMemberName, buf.buf);
 			xfree(retVal);
 			BGString_free(&buf);

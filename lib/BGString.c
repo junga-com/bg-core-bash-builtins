@@ -10,6 +10,9 @@ void BGString_init(BGString* pStr, int allocatedLen)
 	pStr->buf=xmalloc(pStr->allocatedLen);
 	pStr->buf[pStr->len]='\0';
 	pStr->itr=NULL;
+	pStr->indentLevel = 0;
+	pStr->lineEnd = "\n";
+	pStr->sep = ",";
 }
 void BGString_initFromStr(BGString* pStr, char* s)
 {
@@ -18,6 +21,9 @@ void BGString_initFromStr(BGString* pStr, char* s)
 	pStr->buf=xmalloc(pStr->allocatedLen);
 	strcpy(bgstr(pStr->buf), s);
 	pStr->itr=NULL;
+	pStr->indentLevel = 0;
+	pStr->lineEnd = "\n";
+	pStr->sep = ",";
 }
 void BGString_initFromAllocatedStr(BGString* pStr, char* s)
 {
@@ -25,6 +31,9 @@ void BGString_initFromAllocatedStr(BGString* pStr, char* s)
 	pStr->allocatedLen=pStr->len+1;
 	pStr->buf = s;
 	pStr->itr=NULL;
+	pStr->indentLevel = 0;
+	pStr->lineEnd = "\n";
+	pStr->sep = ",";
 }
 void BGString_grow(BGString* pStr, int newAllocatedLen)
 {
@@ -50,6 +59,9 @@ void BGString_free(BGString* pStr)
 		pStr->len=0;
 		pStr->allocatedLen=0;
 		pStr->itr=NULL;
+		pStr->indentLevel = 0;
+		pStr->lineEnd = "\n";
+		pStr->sep = ",";
 	}
 }
 
@@ -113,7 +125,7 @@ void BGString_appendfv(BGString* pStr, char* separator, char* fmt, va_list args)
 }
 
 
-void BGString_appendn(BGString* pStr, char* s, int sLen, char* separator)
+void BGString_appendn(BGString* pStr, char* separator, char* s, int sLen)
 {
 	if (!s || !*s)
 		return;
@@ -130,11 +142,11 @@ void BGString_appendn(BGString* pStr, char* s, int sLen, char* separator)
 	pStr->len+=sLen;
 	pStr->buf[pStr->len]='\0';
 }
-void BGString_append(BGString* pStr, char* s, char* separator)
+void BGString_append(BGString* pStr, char* separator, char* s)
 {
 	if (!s || !*s)
 		return;
-	BGString_appendn(pStr, s, strlen(s), separator);
+	BGString_appendn(pStr, separator, s, strlen(s));
 }
 void BGString_copy(BGString* pStr, char* s)
 {
@@ -143,7 +155,7 @@ void BGString_copy(BGString* pStr, char* s)
 	pStr->len = 0;
 	if (!s || !*s)
 		return;
-	BGString_appendn(pStr, s, strlen(s), "");
+	BGString_appendn(pStr,"", s, strlen(s));
 }
 void BGString_replaceWhitespaceWithNulls(BGString* pStr)
 {

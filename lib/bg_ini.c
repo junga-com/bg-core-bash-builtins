@@ -1000,7 +1000,7 @@ char* _configGetScopedFilesList()
 			char* scopePath = ShellVar_assocGet(vConfigScopes, scopeName);
 			if (!scopePath)
 				assertError(NULL, "the 'configScopes' global associative array for the global config system is missing the entry for the scope '%s' which is mentioned in the element [0] ordered scope list", scopeName);
-			BGString_append(&fileList, scopePath, ",");
+			BGString_append(&fileList, ",", scopePath);
 		}
 		ShellVar_assocSet(vConfigScopes, "orderedFileList", fileList.buf);
 		list = ShellVar_assocGet(vConfigScopes, "orderedFileList");

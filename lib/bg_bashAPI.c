@@ -269,7 +269,6 @@ int ShellFunc_execute(SHELL_VAR* func, WORD_LIST* args)
 
 
 
-
 SHELL_VAR* ShellVar_find(char* varname)
 {
 	SHELL_VAR* retVal = find_variable(varname);
@@ -618,14 +617,14 @@ char* vcFlagsToString(VAR_CONTEXT* vc)
 	BGString_init(&retVal, 500);
 	BGString_appendf(&retVal, "", "(%0.2X) ", vc->flags);
 
-	if (vc->flags&VC_HASLOCAL)  BGString_append(&retVal,"VC_HASLOCAL",",");
-	if (vc->flags&VC_HASTMPVAR) BGString_append(&retVal,"VC_HASTMPVAR",",");
-	if (vc->flags&VC_FUNCENV)   BGString_append(&retVal,"VC_FUNCENV",",");
-	if (vc->flags&VC_BLTNENV)   BGString_append(&retVal,"VC_BLTNENV",",");
-	if (vc->flags&VC_TEMPENV)   BGString_append(&retVal,"VC_TEMPENV",",");
+	if (vc->flags&VC_HASLOCAL)  BGString_append(&retVal, ",", "VC_HASLOCAL");
+	if (vc->flags&VC_HASTMPVAR) BGString_append(&retVal, ",", "VC_HASTMPVAR");
+	if (vc->flags&VC_FUNCENV)   BGString_append(&retVal, ",", "VC_FUNCENV");
+	if (vc->flags&VC_BLTNENV)   BGString_append(&retVal, ",", "VC_BLTNENV");
+	if (vc->flags&VC_TEMPENV)   BGString_append(&retVal, ",", "VC_TEMPENV");
 
-	if (vc_istempenv(vc))   BGString_append(&retVal,"vc_istempenv",",");
-	if (vc_istempscope(vc)) BGString_append(&retVal,"vc_istempscope",",");
+	if (vc_istempenv(vc))   BGString_append(&retVal, ",", "vc_istempenv");
+	if (vc_istempscope(vc)) BGString_append(&retVal, ",", "vc_istempscope");
 	return retVal.buf;
 }
 
@@ -764,7 +763,7 @@ void outputValue(BGRetVar* retVar, char* value)
 				char* oldval = ShellVar_get(retVar->var);
 				BGString newVal; BGString_init(&newVal,strlen(oldval)+ strlen(delim) + strlen(value) + 1 );
 				BGString_copy(&newVal, oldval);
-				BGString_append(&newVal, value, delim);
+				BGString_append(&newVal, delim, value);
 				if (retVar->type==rt_arrayRef)
 					ShellVar_setS(retVar->arrayRef, newVal.buf);
 				else if (array_p(retVar->var))
@@ -820,7 +819,7 @@ void outputValues(BGRetVar* retVar, WORD_LIST* values)
 			BGString newVal; BGString_init(&newVal, allocSize);
 			BGString_copy(&newVal, oldval);
 			for (WORD_LIST* lp=values; lp; lp=lp->next)
-				BGString_append(&newVal, lp->word->word, delim);
+				BGString_append(&newVal, delim, lp->word->word);
 			if (retVar->type==rt_arrayRef)
 				ShellVar_setS(retVar->arrayRef, newVal.buf);
 			else if (array_p(retVar->var))
@@ -1043,29 +1042,28 @@ void BGRetVar_startOutput(BGRetVar* retVar)
 char* ShellVarFlagsToString(int flags) {
 	BGString retVal;
 	BGString_init(&retVal, 500);
-	BGString_appendf(&retVal, "", "(%0.2X) ", flags);
 
-	if (flags&att_exported)   BGString_append(&retVal, "exported", ",");
-	if (flags&att_readonly)   BGString_append(&retVal, "readonly", ",");
-	if (flags&att_array)      BGString_append(&retVal, "array", ",");
-	if (flags&att_function)   BGString_append(&retVal, "function", ",");
-	if (flags&att_integer)    BGString_append(&retVal, "integer", ",");
-	if (flags&att_local)      BGString_append(&retVal, "local", ",");
-	if (flags&att_assoc)      BGString_append(&retVal, "assoc", ",");
-	if (flags&att_trace)      BGString_append(&retVal, "trace", ",");
-	if (flags&att_uppercase)  BGString_append(&retVal, "uppercase", ",");
-	if (flags&att_lowercase)  BGString_append(&retVal, "lowercase", ",");
-	if (flags&att_capcase)    BGString_append(&retVal, "capcase", ",");
-	if (flags&att_nameref)    BGString_append(&retVal, "nameref", ",");
-	if (flags&att_invisible)  BGString_append(&retVal, "invisible", ",");
-	if (flags&att_nounset)    BGString_append(&retVal, "nounset", ",");
-	if (flags&att_noassign)   BGString_append(&retVal, "noassign", ",");
-	if (flags&att_imported)   BGString_append(&retVal, "imported", ",");
-	if (flags&att_special)    BGString_append(&retVal, "special", ",");
-	if (flags&att_nofree)     BGString_append(&retVal, "nofree", ",");
-	if (flags&att_regenerate) BGString_append(&retVal, "regenerate", ",");
-	if (flags&att_tempvar)    BGString_append(&retVal, "tempvar", ",");
-	if (flags&att_propagate)  BGString_append(&retVal, "propagate", ",");
+	if (flags&att_exported)   BGString_append(&retVal, ",", "exported");
+	if (flags&att_readonly)   BGString_append(&retVal, ",", "readonly");
+	if (flags&att_array)      BGString_append(&retVal, ",", "array");
+	if (flags&att_function)   BGString_append(&retVal, ",", "function");
+	if (flags&att_integer)    BGString_append(&retVal, ",", "integer");
+	if (flags&att_local)      BGString_append(&retVal, ",", "local");
+	if (flags&att_assoc)      BGString_append(&retVal, ",", "assoc");
+	if (flags&att_trace)      BGString_append(&retVal, ",", "trace");
+	if (flags&att_uppercase)  BGString_append(&retVal, ",", "uppercase");
+	if (flags&att_lowercase)  BGString_append(&retVal, ",", "lowercase");
+	if (flags&att_capcase)    BGString_append(&retVal, ",", "capcase");
+	if (flags&att_nameref)    BGString_append(&retVal, ",", "nameref");
+	if (flags&att_invisible)  BGString_append(&retVal, ",", "invisible");
+	if (flags&att_nounset)    BGString_append(&retVal, ",", "nounset");
+	if (flags&att_noassign)   BGString_append(&retVal, ",", "noassign");
+	if (flags&att_imported)   BGString_append(&retVal, ",", "imported");
+	if (flags&att_special)    BGString_append(&retVal, ",", "special");
+	if (flags&att_nofree)     BGString_append(&retVal, ",", "nofree");
+	if (flags&att_regenerate) BGString_append(&retVal, ",", "regenerate");
+	if (flags&att_tempvar)    BGString_append(&retVal, ",", "tempvar");
+	if (flags&att_propagate)  BGString_append(&retVal, ",", "propagate");
 	return retVal.buf;
 }
 

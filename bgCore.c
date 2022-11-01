@@ -394,8 +394,9 @@ int bgCore_builtin(WORD_LIST* list)
 			ret = EXECUTION_SUCCESS;
 		}
 
-		// bgCore dbgVars <retVar> <stackPosition>
-		else if (strcmp("dbgVars", list->word->word)==0) {
+		// bgCore scopeToJSON <retVar> <stackPosition>
+		// returns a variabl scope (aka context) as a single JSON object (no type info -- just hierarchal name,values)
+		else if (strcmp("scopeToJSON", list->word->word)==0) {
 			list=list->next;
 			BGRetVar retVar; BGRetVar_initFromVarname(&retVar, list->word->word);
 			list=list->next;
@@ -406,6 +407,24 @@ int bgCore_builtin(WORD_LIST* list)
 				cntx = (cntx && cntx->up)?cntx->up:cntx;
 
 			char* jsonTxt = ShellContext_toJSON(cntx);
+			outputValue(&retVar, jsonTxt);
+			xfree(jsonTxt);
+			ret = EXECUTION_SUCCESS;
+		}
+
+		// bgCore dbgVars <retVar> <stackPosition>
+		// returns a variable scope (aka context) as and array of variable objects (with type information)
+		else if (strcmp("dbgVars", list->word->word)==0) {
+			list=list->next;
+			BGRetVar retVar; BGRetVar_initFromVarname(&retVar, list->word->word);
+			list=list->next;
+			int stackPosition = atoi((list)?list->word->word:"0");
+
+			VAR_CONTEXT* cntx = global_variables;
+			for (int i=0; i<stackPosition; i++)
+				cntx = (cntx && cntx->up)?cntx->up:cntx;
+
+			char* jsonTxt = ShellContext_dumpJSON(cntx);
 			outputValue(&retVar, jsonTxt);
 			xfree(jsonTxt);
 			ret = EXECUTION_SUCCESS;

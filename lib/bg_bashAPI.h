@@ -78,6 +78,9 @@ extern void bgWarn(char* fmt, ...);
 extern void assertError_init();
 extern void assertError_done();
 
+// from setattr.def
+extern int var_attribute_string(SHELL_VAR* var, int pattr, char* flags);
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ShellVar
@@ -103,6 +106,9 @@ extern int ShellFunc_execute(SHELL_VAR* func, WORD_LIST* args);
 
 
 // plain var functions
+
+// outStr should be at least MAX_ATTRIBUTES long (i.e. char flags[MAX_ATTRIBUTES]; )
+#define ShellVar_getAttributes(var,outStr)      var_attribute_string(var, 0, outStr)
 extern SHELL_VAR* ShellVar_find(char* varname);
 extern SHELL_VAR* ShellVar_findUpVar(char* varname);
 #define ShellVar_findLocal(varname)             hash_lookup(varname, shell_variables);

@@ -70,21 +70,21 @@ char* manifestExpandOutStr(ManifestRecord* rec, char* outputStr)
 		while (*p2 && *p2 != '$')
 			p2++;
 		if (*p2 == '$') {
-			BGString_appendn(&retVal,p, (p2-p),"");
+			BGString_appendn(&retVal,"", p, (p2-p));
 			p = p2+1;
 			switch (*p) {
-				case '0': BGString_append(&retVal,rec->line     , ""); break;
-				case '1': BGString_append(&retVal,rec->pkgName  , ""); break;
-				case '2': BGString_append(&retVal,rec->assetType, ""); break;
-				case '3': BGString_append(&retVal,rec->assetName, ""); break;
-				case '4': BGString_append(&retVal,rec->assetPath, ""); break;
+				case '0': BGString_append(&retVal, "", rec->line     ); break;
+				case '1': BGString_append(&retVal, "", rec->pkgName  ); break;
+				case '2': BGString_append(&retVal, "", rec->assetType); break;
+				case '3': BGString_append(&retVal, "", rec->assetName); break;
+				case '4': BGString_append(&retVal, "", rec->assetPath); break;
 				default:
-					BGString_appendn(&retVal,p2,2,"");
+					BGString_appendn(&retVal,"", p2, 2);
 					break;
 			}
 			p++;
 		} else {
-			BGString_append(&retVal,p,"");
+			BGString_append(&retVal,"", p);
 			p = p2;
 		}
 	}

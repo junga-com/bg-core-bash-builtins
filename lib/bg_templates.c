@@ -84,7 +84,7 @@ char* templateExpandStrC(TemplateExpandOptions* pOpts, char* templateStr, char* 
 	while (*pS) {
 		char* pE = strchr(pS, '%');
 		if (!pE) pE = pS + strlen(pS);
-		BGString_appendn(&sOut, pS, (pE-pS), "");
+		BGString_appendn(&sOut, "", pS, (pE-pS));
 		pS = pE;
 
 		if (*pS == '%') {
@@ -237,7 +237,7 @@ int templateExpandC(TemplateExpandOptions* pOpts, char* srcTemplate, char* dstFi
 			while (*pS) {
 				char* pE = strchr(pS, '%');
 				if (!pE) pE = pS + strlen(pS);
-				BGString_appendn(&sOut, pS, (pE-pS), "");
+				BGString_appendn(&sOut, "", pS, (pE-pS));
 				pS = pE;
 
 				if (*pS == '%') {
@@ -512,6 +512,6 @@ void _evaluateTemplateExpr(TemplateExpression* pExpr, BGString* pOut)
 		}
 	}
 
-	BGString_append(pOut, (value)?value:"", "");
+	BGString_append(pOut, "", (value)?value:"");
 	xfree(allocatedValue);
 }

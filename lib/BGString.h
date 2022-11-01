@@ -11,10 +11,13 @@
 // that can be iterated. A typical senario is getting a whitespace separated string from a SHELL_VAR, turning whitespace
 // to nulls and then iterating the words.
 typedef struct {
-	char* buf;
-	int len;
+	char*  buf;
+	int    len;
 	size_t allocatedLen;
-	char* itr;
+	char*  itr;
+	int    indentLevel;
+	char*  lineEnd;
+	char*  sep;
 } BGString;
 
 extern void BGString_init(BGString* pStr, int allocatedLen);
@@ -27,8 +30,8 @@ extern int  BGString_writeln(BGString* pStr, FILE* fd);
 
 extern void BGString_appendf( BGString* pStr, char* separator, char* fmt, ...);
 extern void BGString_appendfv(BGString* pStr, char* separator, char* fmt, va_list args);
-extern void BGString_appendn(BGString* pStr, char* s, int sLen, char* separator);
-extern void BGString_append(BGString* pStr, char* s, char* separator);
+extern void BGString_appendn( BGString* pStr, char* separator, char* s, int sLen);
+extern void BGString_append(  BGString* pStr, char* separator, char* s);
 extern void BGString_copy(BGString* pStr, char* s);
 extern void BGString_replaceWhitespaceWithNulls(BGString* pStr);
 extern void BGString_replaceChar(BGString* pStr, char toReplace, char withThis);

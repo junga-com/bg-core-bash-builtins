@@ -622,10 +622,10 @@ int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
 				else {
 					BGString newRef; BGString_init(&newRef, 100);
 					BGString_copy(&newRef,"_bgclassCall");
-					BGString_append(&newRef, seenSessionID, " ");
-					BGString_append(&newRef, subObj.refClass, " ");
-					BGString_append(&newRef, (subObj.superCallFlag)?"1":"0", " ");
-					BGString_append(&newRef, " | ", "");
+					BGString_append(&newRef,  " ", seenSessionID);
+					BGString_append(&newRef,  " ", subObj.refClass);
+					BGString_append(&newRef,  " ", (subObj.superCallFlag)?"1":"0");
+					BGString_append(&newRef,   "", " | ");
 					printf("\"%s\"", newRef.buf);
 					BGString_free(&newRef);
 				}
@@ -662,10 +662,10 @@ int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
 				else {
 					BGString newRef; BGString_init(&newRef, 100);
 					BGString_copy(&newRef,"_bgclassCall");
-					BGString_append(&newRef, seenSessionID, " ");
-					BGString_append(&newRef, subObj.refClass, " ");
-					BGString_append(&newRef, (subObj.superCallFlag)?"1":"0", " ");
-					BGString_append(&newRef, " | ", "");
+					BGString_append(&newRef, " ", seenSessionID);
+					BGString_append(&newRef, " ", subObj.refClass);
+					BGString_append(&newRef, " ", (subObj.superCallFlag)?"1":"0");
+					BGString_append(&newRef, "",  " | ");
 					printf("\"%s\"", newRef.buf);
 					BGString_free(&newRef);
 				}
@@ -695,10 +695,10 @@ int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
 				else {
 					BGString newRef; BGString_init(&newRef, 100);
 					BGString_copy(&newRef,"_bgclassCall");
-					BGString_append(&newRef, seenSessionID, " ");
-					BGString_append(&newRef, subObj.refClass, " ");
-					BGString_append(&newRef, (subObj.superCallFlag)?"1":"0", " ");
-					BGString_append(&newRef, " | ", "");
+					BGString_append(&newRef, " ", seenSessionID);
+					BGString_append(&newRef, " ", subObj.refClass);
+					BGString_append(&newRef, " ", (subObj.superCallFlag)?"1":"0");
+					BGString_append(&newRef, "",  " | ");
 					printf("\"%s\"", newRef.buf);
 					BGString_free(&newRef);
 				}
@@ -853,6 +853,133 @@ char* ShellContext_toJSON(VAR_CONTEXT* cntx)
 	if (attribCount>0)
 		BGString_appendf(&jsonTxt,"", "%s%*s", fieldEnding, indentLevel*3,"");
 	BGString_appendf(&jsonTxt,"", "%c", tClose);
+
+	//__bgtrace("!!! ctxToJson Done = '%s'\n",  jsonTxt.buf);
+	return jsonTxt.buf;
+}
+
+// static const char* jsonObjStartTok = "{";
+// static const char* jsonObjEndTok = "}";
+// static const char* jsonListStartTok = "[";
+// static const char* jsonListEndTok = "]";
+// static const char* jsonSepTok = ",";
+
+
+extern BGString* BGString_jsonStart(BGString* pStr, char* tok);
+extern BGString* BGString_jsonNext(BGString* pStr, char* fieldSep);
+extern BGString* BGString_jsonStrAttr(BGString* pStr, char* name, char* value);
+extern BGString* BGString_jsonEnd(BGString* pStr, char* tok, int notEmpty);
+
+BGString* BGString_jsonStart(BGString* pStr, char* tok)
+{
+	BGString_appendf(pStr,"", "%s", tok);
+	if (*pStr->lineEnd == '\n')
+		pStr->indentLevel++;
+	return pStr;
+}
+
+// writes conditional 'sep' character and optional indent whitespace
+BGString* BGString_jsonNext(BGString* pStr, char* fieldSep)
+{
+	BGString_appendf(pStr,"", "%s%s%*s", fieldSep, pStr->lineEnd, 3*(pStr->indentLevel),"");
+	return pStr;
+}
+
+BGString* BGString_jsonStrAttr(BGString* pStr, char* name, char* value)
+{
+	BGString_appendf(pStr,"", "\"%s\": \"%s\"", name, value);
+	return pStr;
+}
+
+BGString* BGString_jsonEnd(BGString* pStr, char* tok, int notEmpty)
+{
+	if (*pStr->lineEnd == '\n')
+		pStr->indentLevel--;
+	if (notEmpty)
+		BGString_jsonNext(pStr, "");
+	BGString_appendf(pStr,"", "%s", tok);
+	return pStr;
+}
+
+// [
+// 	{
+// 		"name": "<name>",
+// 		"value": "<value>",
+// 		"type": "<type>"
+// 	},
+// 	{
+// 		"name": "<name>",
+// 		"value": "<value>",
+// 		"type": "<type>"
+// 	}
+// ]
+
+
+char* ShellContext_dumpJSON(VAR_CONTEXT* cntx)
+{
+	BGString jsonTxt; BGString_init(&jsonTxt, 500);
+
+	// start the vars array
+	BGString_jsonStart(&jsonTxt, "[");
+
+	// insert a 'virtual' variable 'context' with the name of the context
+	BGString_jsonNext(&jsonTxt, "");
+	BGString_jsonStart(&jsonTxt, "{");
+	BGString_jsonNext(&jsonTxt, "");
+	BGString_jsonStrAttr(&jsonTxt, "name",  "contextName");
+	BGString_jsonNext(&jsonTxt, ",");
+	BGString_jsonStrAttr(&jsonTxt, "value", (cntx!=global_variables)?cntx->name:"GLOBAL");
+	BGString_jsonNext(&jsonTxt, ",");
+	BGString_jsonStrAttr(&jsonTxt, "type",  "--");
+	BGString_jsonEnd(&jsonTxt, "}", 1);
+
+	// iterate the variables in this context
+	AssocSortedItr itr = {0}; AssocSortedItr_init(&itr, cntx->table);
+	BUCKET_CONTENTS* bVar;
+	while ((bVar=AssocSortedItr_next(&itr))) {
+		char* name = bVar->key;
+		SHELL_VAR* vValue = (SHELL_VAR*)bVar->data;
+		//__bgtrace("!!! ctxToJson name='%s'  varname='%s'  type='%s'\n",  name, vValue->name, BGRetType_toString(ShellVar_getType(vValue)) );
+
+		BGString_jsonNext(&jsonTxt, ",");
+		BGString_jsonStart(&jsonTxt, "{");
+
+		// name
+		BGString_jsonNext(&jsonTxt, "");
+		BGString_jsonStrAttr(&jsonTxt, "name",  name);
+
+		// value
+		char* jsonValue = ShellVar_toJSON(vValue, 0);
+		char* jsonValueEsc = jsonEscape(jsonValue);
+		BGString_jsonNext(&jsonTxt, ",");
+		BGString_jsonStrAttr(&jsonTxt, "value", jsonValueEsc);
+		xfree(jsonValueEsc);
+		xfree(jsonValue);
+
+		// type
+		char attrStr[MAX_ATTRIBUTES];
+		ShellVar_getAttributes(vValue, attrStr);
+		BGString_jsonNext(&jsonTxt, ",");
+		BGString_jsonStrAttr(&jsonTxt, "type", attrStr);
+
+		// flagsStr
+		char* flagsDescription = ShellVarFlagsToString(vValue->attributes);
+		BGString_jsonNext(&jsonTxt, ",");
+		BGString_jsonStrAttr(&jsonTxt, "flagsStr", flagsDescription);
+		xfree(flagsDescription);
+
+		// flags
+		flagsDescription = saprintf("%0.2X", vValue->attributes);
+		BGString_jsonNext(&jsonTxt, ",");
+		BGString_jsonStrAttr(&jsonTxt, "flags", flagsDescription);
+		xfree(flagsDescription);
+
+		BGString_jsonEnd(&jsonTxt, "}", 1);
+	}
+	AssocSortedItr_free(&itr);
+
+	// end the vars array. '1'(true) means that the list of vars was not empty (we wrote the contextName before the loop so there is at least one)
+	BGString_jsonEnd(&jsonTxt, "]", 1);
 
 	//__bgtrace("!!! ctxToJson Done = '%s'\n",  jsonTxt.buf);
 	return jsonTxt.buf;

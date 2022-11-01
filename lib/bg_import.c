@@ -162,13 +162,13 @@ char* findInLibPaths(char* scriptName)
 {
 	BGString searchPaths;
 	BGString_init(&searchPaths, 500);
-	BGString_append(&searchPaths, ShellVar_get(ShellVar_find("scriptFolder")),":");
+	BGString_append(&searchPaths, ":", ShellVar_get(ShellVar_find("scriptFolder")));
 
 	char* bgSourceOnlyUnchangable = ShellVar_get(ShellVar_find("bgSourceOnlyUnchangable"));
 	if (!bgSourceOnlyUnchangable || strcmp(bgSourceOnlyUnchangable,"")==0)
-		BGString_append(&searchPaths, ShellVar_get(ShellVar_find("bgLibPath")),":");
+		BGString_append(&searchPaths, ":", ShellVar_get(ShellVar_find("bgLibPath")));
 
-	BGString_append(&searchPaths, "/usr/lib",":");
+	BGString_append(&searchPaths, ":", "/usr/lib");
 	BGString_replaceChar(&searchPaths,':','\0');
 
 	BGString tryPath;
@@ -178,8 +178,8 @@ char* findInLibPaths(char* scriptName)
 	while (!foundScriptPath && (onePath = BGString_nextWord(&searchPaths)) ) {
 		for (int i=0; !foundScriptPath && relPaths[i];  i++) {
 			BGString_copy(&tryPath, onePath);
-			BGString_append(&tryPath, relPaths[i],"/");
-			BGString_append(&tryPath, scriptName,"/");
+			BGString_append(&tryPath, "/", relPaths[i]);
+			BGString_append(&tryPath, "/", scriptName);
 			if (fsExists(tryPath.buf)) {
 				foundScriptPath = savestring(tryPath.buf);
 			}
