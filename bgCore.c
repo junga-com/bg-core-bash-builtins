@@ -402,6 +402,8 @@ int bgCore_builtin(WORD_LIST* list)
 			list=list->next;
 			int stackPosition = atoi(list->word->word);
 
+			// TODO: this algorithm may not handle temporary scopes for assignments before a command (see two places).
+			//       It might be OK if temp vars are always merged into the function scope by this point
 			VAR_CONTEXT* cntx = global_variables;
 			for (int i=0; i<stackPosition; i++)
 				cntx = (cntx && cntx->up)?cntx->up:cntx;
@@ -420,11 +422,13 @@ int bgCore_builtin(WORD_LIST* list)
 			list=list->next;
 			int stackPosition = atoi((list)?list->word->word:"0");
 
-			VAR_CONTEXT* cntx = global_variables;
+			// TODO: this algorithm may not handle temporary scopes for assignments before a command (see two places). It might be
+			//       OK if temp vars are always merged into the function scope by this point
+			VAR_CONTEXT* startCntx = global_variables;
 			for (int i=0; i<stackPosition; i++)
-				cntx = (cntx && cntx->up)?cntx->up:cntx;
+				startCntx = (startCntx && startCntx->up)?startCntx->up:startCntx;
 
-			char* jsonTxt = ShellContext_dumpJSON(cntx);
+			char* jsonTxt = ShellContext_dumpJSON(startCntx, DJ_DOHIERACHY);
 			outputValue(&retVar, jsonTxt);
 			xfree(jsonTxt);
 			ret = EXECUTION_SUCCESS;

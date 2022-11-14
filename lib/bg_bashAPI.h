@@ -67,10 +67,11 @@ typedef struct {
 	char* name;
 } CallFrame;
 
+// resource management -- assertError will terminate the builtin with a longjump and unwind any variables on the unwind stack
 extern CallFrame* callFrames_push();                 // at the start of each builtin call this
-extern void callFrames_pop();                      // at the end of the success path call this
-extern void callFrames_longjump(int exitCode);     // at the start of the error path (in assertError or equivalent) call this
-extern int callFrames_getPos();
+extern void       callFrames_pop();                  // at the end of the success path call this
+extern void       callFrames_longjump(int exitCode); // at the start of the error path (in assertError or equivalent) call this
+extern int        callFrames_getPos();               // number of concurrent calls in progress
 
 extern int assertError(WORD_LIST* opts, char* fmt, ...);
 extern void bgWarn(char* fmt, ...);
@@ -321,6 +322,7 @@ extern int fsReplaceIfDifferent(char* srcFilename, char* destFilename, int flags
 // Debugging
 //
 extern char* ShellVarFlagsToString(int flags);
+extern char* vcFlagsToString(VAR_CONTEXT* vc, int includeHexValue);
 extern void ShellContext_dump(VAR_CONTEXT* varCntx, int includeVars);
 
 

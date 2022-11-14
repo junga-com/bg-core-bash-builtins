@@ -107,7 +107,7 @@ void BGString_appendfv(BGString* pStr, char* separator, char* fmt, va_list args)
 	if ( (pStr->len + separatorLen + strlen(fmt)) > pStr->allocatedLen )
 		BGString_grow(pStr, pStr->len + separatorLen + strlen(fmt));
 
-	if (pStr->len > 0) {
+	if (pStr->len > 0 && separatorLen>0) {
 		strcpy(pStr->buf+pStr->len, (separator)?separator:"");
 		pStr->len+=separatorLen;
 	}

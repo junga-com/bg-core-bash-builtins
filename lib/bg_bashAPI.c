@@ -602,7 +602,7 @@ BUCKET_CONTENTS* AssocSortedItr_peek(AssocSortedItr* pI)
 // Misc
 
 
-char* vcFlagsToString(VAR_CONTEXT* vc)
+char* vcFlagsToString(VAR_CONTEXT* vc, int includeHexValue)
 {
 	// #define VC_HASLOCAL	0x01
 	// #define VC_HASTMPVAR	0x02
@@ -615,7 +615,8 @@ char* vcFlagsToString(VAR_CONTEXT* vc)
 
 	BGString retVal;
 	BGString_init(&retVal, 500);
-	BGString_appendf(&retVal, "", "(%0.2X) ", vc->flags);
+	if (includeHexValue)
+		BGString_appendf(&retVal, ",", "(%0.2X) ", vc->flags);
 
 	if (vc->flags&VC_HASLOCAL)  BGString_append(&retVal, ",", "VC_HASLOCAL");
 	if (vc->flags&VC_HASTMPVAR) BGString_append(&retVal, ",", "VC_HASTMPVAR");
@@ -647,7 +648,7 @@ void ShellContext_dump(VAR_CONTEXT* startCntx, int includeVars)
 
 	char* label = "VAR_CONTEXT";
 	for (VAR_CONTEXT* cntx=startCntx; cntx;  cntx=cntx->down) {
-		char* flagStr = vcFlagsToString(cntx);
+		char* flagStr = vcFlagsToString(cntx, 1);
 		__bgtrace("%11s: '%-*s' scope='%d'(%s) up='%-4s'  varCount=%3d  flags='%s'\n",
 			label,
 			maxCntxNameLen, cntx->name,
