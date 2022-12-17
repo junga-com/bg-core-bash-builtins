@@ -2,6 +2,11 @@
 
 source /usr/lib/bg_core.sh
 
+# foo="hi"
+# varContextToJSON
+# #bgCore dbgVars "" 3
+# exit
+
 trap 'echo "EXIT one"
 echo "EXIT two"' EXIT
 

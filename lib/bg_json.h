@@ -94,7 +94,7 @@ extern char* ShellContext_toJSON(VAR_CONTEXT* cntx);
 
 // returns the context as an array of variable objects (i.e. {name,value,type...})
 #define DJ_DOHIERACHY 0x01
-extern char* ShellContext_dumpJSON(VAR_CONTEXT* cntx, int flags);
+extern char* ShellContext_dumpJSON(int stackPositionFromGlobal, int flags);
 
 
 #endif // _bg_json_H_

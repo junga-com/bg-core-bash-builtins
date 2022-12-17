@@ -932,7 +932,7 @@ BGString* BGString_jsonEnd(BGString* pStr, char* tok, int notEmpty)
 // ]
 
 
-char* ShellContext_dumpJSON(VAR_CONTEXT* startCntx, int flags)
+char* ShellContext_dumpJSON(int stackPositionFromGlobal, int flags)
 {
 	int doHierarchy = flags&DJ_DOHIERACHY;
 
@@ -940,115 +940,172 @@ char* ShellContext_dumpJSON(VAR_CONTEXT* startCntx, int flags)
 
 	// start the vars array
 	BGString_jsonStart(&jsonTxt, "[");
+	char* chSep = "";
 
-	VAR_CONTEXT* cntx = startCntx;
+	// add the cur function's arguments
+	// insert a 'meta' variable 'contextName' with information about the context
+	BGString_jsonNext(&jsonTxt, chSep);  BGString_jsonStart(&jsonTxt, "{");
+	BGString_jsonNext(&jsonTxt, "");     BGString_jsonStrAttr(&jsonTxt, "name",  "META:scopeInfo");
+	BGString_jsonNext(&jsonTxt, ",");    BGString_jsonStrAttr(&jsonTxt, "value", "dollar_vars");
+	BGString_jsonNext(&jsonTxt, ",");    BGString_jsonStrAttr(&jsonTxt, "cntxName", "global");
+	BGString_jsonNext(&jsonTxt, ",");    BGString_jsonStrAttr(&jsonTxt, "scope", "Current Global Dollar Vars");
+	BGString_jsonNext(&jsonTxt, ",");    BGString_jsonStrAttr(&jsonTxt, "type",  "dollar_vars");
+	BGString_jsonEnd(&jsonTxt, "}", 1);
+	chSep = ",";
+	// dollar_vars[10] is only as much as the first 9. null marks the end
+	for (int i=0; i<10 && dollar_vars[i]; i++) {
+		char* name = saprintf("$%d",i);
+		char* escapedArgValue = jsonEscape(dollar_vars[i]);
+		BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStart(&jsonTxt, "{");
+		BGString_jsonNext(&jsonTxt, "");    BGString_jsonStrAttr(&jsonTxt, "name",  name);
+		BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStrAttr(&jsonTxt, "value", escapedArgValue);
+		BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStrAttr(&jsonTxt, "scope", "Current Global Dollar Vars");
+		BGString_jsonEnd(&jsonTxt, "}", 1);
+		xfree(escapedArgValue);
+	}
+	// TODO: do the $10 and up
+	int i=10;
+	for (WORD_LIST *highArgs=rest_of_args; highArgs; highArgs=highArgs->next, i++) {
+		char* name = saprintf("$%d",i);
+		char* escapedArgValue = jsonEscape(highArgs->word->word);
+		BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStart(&jsonTxt, "{");
+		BGString_jsonNext(&jsonTxt, "");    BGString_jsonStrAttr(&jsonTxt, "name",  name);
+		BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStrAttr(&jsonTxt, "value", escapedArgValue);
+		BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStrAttr(&jsonTxt, "scope", "Current Global Dollar Vars");
+		BGString_jsonEnd(&jsonTxt, "}", 1);
+		xfree(escapedArgValue);
+	}
 
+	// find the startCntx given stackPositionFromGlobal counting from global
+	// TODO: this algorithm may not handle temporary scopes correctly. test it better with a unit test (but I am not sure of all
+	//       the ways scopes can be made and if they end up in the chain)
+	VAR_CONTEXT* startCntx = global_variables;
+	for (int i=0; i<stackPositionFromGlobal; i++) {
+		startCntx = (startCntx && startCntx->up)?startCntx->up:startCntx;
+		while (!vc_isfuncenv(startCntx))
+			startCntx = startCntx->up;
+	}
+	if (!startCntx)
+		assertError(NULL, "failed to find startCntx for stackPositionFromGlobal='%d'", stackPositionFromGlobal);
+
+	// keep track of var names we have seen so that we can set the 'shadowed' tag on variables hidden by the same name in a lower scope
 	HASH_TABLE* aggregateScope = hash_create(0);
 
+	SHELL_VAR* vArgsC = ShellVar_findGlobal("BASH_ARGC");
+	// SHELL_VAR* vArgsV = ShellVar_findGlobal("BASH_ARGV");
+
+	int frmNum = 0;
 	int relFrmNum = 0;
+	int startSeen = 0;
+	int argsPos = 0;
+	VAR_CONTEXT* cntx = shell_variables;
 	while (cntx) {
-		int frmNum = relFrmNum;
-		char* frmNumStr = saprintf("%d", frmNum);
-		char* contextName = (cntx==startCntx)?"local":((cntx==global_variables)?"global":cntx->name);
-		char* cntxTypeStr = vcFlagsToString(cntx,0);
-		char* frmNumAndScopeName = saprintf("frmNo_%d_%s",   frmNum,  (contextName)?contextName:"unnamed");
+		// temp scopes? (not sure if they are separate or merged into the function scopes yet)
+		// if we do find a temp scope, consider if the code below needs to know not to inc the frame number and to name it differently
 
-		// the idea here is that the function scopes are named but there can be temporary unamed scope to hold the assignments before
-		// a command
-		if (contextName)
-			relFrmNum++;
+		// keep track of this frame's position in BASH_ARGC and BASH_ARGV
+		int frmArgCount = atol(ShellVar_arrayGetI(vArgsC, frmNum));
 
-		// insert a 'meta' variable 'contextName' with information about the context
-		BGString_jsonNext(&jsonTxt, (cntx==startCntx)?"":",");
-		BGString_jsonStart(&jsonTxt, "{");
-		BGString_jsonNext(&jsonTxt, "");
-		BGString_jsonStrAttr(&jsonTxt, "name",  "META:scopeInfo");
-		BGString_jsonNext(&jsonTxt, ",");
-		BGString_jsonStrAttr(&jsonTxt, "value", frmNumAndScopeName);
-		BGString_jsonNext(&jsonTxt, ",");
-		BGString_jsonStrAttr(&jsonTxt, "cntxName", cntx->name);
-		BGString_jsonNext(&jsonTxt, ",");
-		BGString_jsonStrAttr(&jsonTxt, "scope", (contextName)?contextName:frmNumAndScopeName);
-		BGString_jsonNext(&jsonTxt, ",");
-		BGString_jsonStrAttr(&jsonTxt, "level", frmNumStr);
-		BGString_jsonNext(&jsonTxt, ",");
-		BGString_jsonStrAttr(&jsonTxt, "type",  cntxTypeStr);
-		BGString_jsonEnd(&jsonTxt, "}", 1);
-
-		// iterate the variables in this context
-		AssocSortedItr itr = {0}; AssocSortedItr_init(&itr, cntx->table);
-		BUCKET_CONTENTS* bVar;
-		while ((bVar=AssocSortedItr_next(&itr))) {
-			char* name = bVar->key;
-			SHELL_VAR* vValue = (SHELL_VAR*)bVar->data;
-			//__bgtrace("!!! ctxToJson name='%s'  varname='%s'  type='%s'\n",  name, vValue->name, BGRetType_toString(ShellVar_getType(vValue)) );
-
-			BGString tags; BGString_init(&tags, 50);
-
-			BGString_jsonNext(&jsonTxt, ",");
-			BGString_jsonStart(&jsonTxt, "{");
-
-			// name
-			BGString_jsonNext(&jsonTxt, "");
-			BGString_jsonStrAttr(&jsonTxt, "name",  name);
-
-			// value
-			char* jsonValue = ShellVar_toJSON(vValue, 2);
-			//char* jsonValueEsc = jsonEscape(jsonValue);
-			BGString_jsonNext(&jsonTxt, ",");
-			BGString_jsonStrAttr(&jsonTxt, "value", jsonValue);
-			//xfree(jsonValueEsc);
-			xfree(jsonValue);
-
-			// type is the variable type which in bash is the attributes it was declared with (-A, -a, -r, -n, etc...)
-			char attrStr[MAX_ATTRIBUTES];
-			ShellVar_getAttributes(vValue, attrStr);
-			BGString_jsonNext(&jsonTxt, ",");
-			BGString_jsonStrAttr(&jsonTxt, "type", attrStr);
-
-			// attributesStr is the text string of optional attributes like (export, readonly, etc...)
-			char* flagsDescription = ShellVarFlagsToString(vValue->attributes);
-			BGString_jsonNext(&jsonTxt, ",");
-			BGString_jsonStrAttr(&jsonTxt, "attributesStr", flagsDescription);
-			xfree(flagsDescription);
-
-			// attributes is the raw hex version of the attributesStr
-			flagsDescription = saprintf("%0.2X", vValue->attributes);
-			BGString_jsonNext(&jsonTxt, ",");
-			BGString_jsonStrAttr(&jsonTxt, "attributes", flagsDescription);
-			xfree(flagsDescription);
-
-			// scope is the <contextName> -- most are function names, startCntx will be "LOCAL" global_variables will be "GLOBAL"
-			BGString_jsonNext(&jsonTxt, ",");
-			BGString_jsonStrAttr(&jsonTxt, "scope", contextName);
-
-			// level is the frmNum
-			BGString_jsonNext(&jsonTxt, ",");
-			BGString_jsonStrAttr(&jsonTxt, "level", frmNumStr);
-
-			if (!assoc_reference(aggregateScope, name)) {
-				assoc_insert(aggregateScope, savestring(name), "1");
-			} else {
-				BGString_append(&tags, " ", "shadowed");
-			}
-
-			// tags -- can be used as classes in the UI
-			BGString_jsonNext(&jsonTxt, ",");
-			BGString_jsonStrAttr(&jsonTxt, "tags", tags.buf);
-			BGString_free(&tags);
-
-			BGString_jsonEnd(&jsonTxt, "}", 1);
+		// we dont write out the scopes before we see startCntx b/c the caller is only asking to see startCntx and above
+		// this may be because the debugger is showing a frame above where it is stopped or b/c we are skipping debugger stub frames
+		// even if we dont write out this context, we need to track/process the BASH_ARGV argsPos and frmNum
+		if (cntx==startCntx) {
+			startSeen = 1;
+			relFrmNum = 0;
 		}
-		AssocSortedItr_free(&itr);
+		if (startSeen) {
+			char* frmNumStr = saprintf("%d", relFrmNum);
+			char* contextName = (cntx==global_variables)?"global":((cntx==startCntx)?"local":(cntx->name));
+			char* cntxTypeStr = vcFlagsToString(cntx,0);
+			char* frmNumAndScopeName = saprintf("frmNo_%s_%s",   frmNumStr,  (contextName)?contextName:"unnamed");
 
-		xfree(frmNumAndScopeName);
-		xfree(cntxTypeStr);
-		xfree(frmNumStr);
+			// TODO: We would like to add the current values of the dollar_vars at this frame but they are stored in dollar_arg_stack
+			//       which is static to the variables.c file so we cant get at them (can we?). There is little point in adding the values
+			//       from BASH_ARGV because those are already shown in the stack view's Source Line (which shows the computed function
+			//       complete with its argument values)
+
+			// insert a 'meta' variable 'contextName' with information about the context
+			BGString_jsonNext(&jsonTxt, chSep);  BGString_jsonStart(&jsonTxt, "{");
+			BGString_jsonNext(&jsonTxt, "");     BGString_jsonStrAttr(&jsonTxt, "name",  "META:scopeInfo");
+			BGString_jsonNext(&jsonTxt, ",");    BGString_jsonStrAttr(&jsonTxt, "value", frmNumAndScopeName);
+			BGString_jsonNext(&jsonTxt, ",");    BGString_jsonStrAttr(&jsonTxt, "cntxName", cntx->name);
+			BGString_jsonNext(&jsonTxt, ",");    BGString_jsonStrAttr(&jsonTxt, "scope", (contextName)?contextName:frmNumAndScopeName);
+			BGString_jsonNext(&jsonTxt, ",");    BGString_jsonStrAttr(&jsonTxt, "level", frmNumStr);
+			BGString_jsonNext(&jsonTxt, ",");    BGString_jsonStrAttr(&jsonTxt, "type",  cntxTypeStr);
+			BGString_jsonEnd(&jsonTxt, "}", 1);
+			chSep = ",";
+
+			// iterate the variables in this context
+			AssocSortedItr itr = {0}; AssocSortedItr_init(&itr, cntx->table);
+			BUCKET_CONTENTS* bVar;
+			while ((bVar=AssocSortedItr_next(&itr))) {
+				char* name = bVar->key;
+				SHELL_VAR* vValue = (SHELL_VAR*)bVar->data;
+				//__bgtrace("!!! ctxToJson name='%s'  varname='%s'  type='%s'\n",  name, vValue->name, BGRetType_toString(ShellVar_getType(vValue)) );
+
+				BGString tags; BGString_init(&tags, 50);
+
+				BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStart(&jsonTxt, "{");
+
+				// name
+				BGString_jsonNext(&jsonTxt, "");    BGString_jsonStrAttr(&jsonTxt, "name",  name);
+
+				// value
+				char* jsonValue = ShellVar_toJSON(vValue, 2);
+				BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStrAttr(&jsonTxt, "value", jsonValue);
+				xfree(jsonValue);
+
+				// type is the variable type which in bash is the attributes it was declared with (-A, -a, -r, -n, etc...)
+				char attrStr[MAX_ATTRIBUTES];
+				ShellVar_getAttributes(vValue, attrStr);
+				BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStrAttr(&jsonTxt, "type", attrStr);
+
+				// attributesStr is the text string of optional attributes like (export, readonly, etc...)
+				char* flagsDescription = ShellVarFlagsToString(vValue->attributes);
+				BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStrAttr(&jsonTxt, "attributesStr", flagsDescription);
+				xfree(flagsDescription);
+
+				// attributes is the raw hex version of the attributesStr
+				flagsDescription = saprintf("%0.2X", vValue->attributes);
+				BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStrAttr(&jsonTxt, "attributes", flagsDescription);
+				xfree(flagsDescription);
+
+				// scope is the <contextName> -- most are function names, startCntx will be "LOCAL" global_variables will be "GLOBAL"
+				BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStrAttr(&jsonTxt, "scope", contextName);
+
+				// level is the relFrmNum
+				BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStrAttr(&jsonTxt, "level", frmNumStr);
+
+				if (!assoc_reference(aggregateScope, name)) {
+					assoc_insert(aggregateScope, savestring(name), "1");
+				} else {
+					BGString_append(&tags, " ", "shadowed");
+				}
+
+				// tags -- can be used as classes in the UI
+				BGString_jsonNext(&jsonTxt, ",");   BGString_jsonStrAttr(&jsonTxt, "tags", tags.buf);
+				BGString_free(&tags);
+
+				BGString_jsonEnd(&jsonTxt, "}", 1);
+			}
+			AssocSortedItr_free(&itr);
+
+			xfree(frmNumAndScopeName);
+			xfree(cntxTypeStr);
+			xfree(frmNumStr);
+		}
 
 		// if we are not doing the whole hiearchy end after the first context. If we are, end after we do global_variables
 		if (!doHierarchy || cntx == global_variables)
 			break;
 
+		// the idea here is that the function scopes are named but there can be temporary unamed scope to hold the assignments before
+		// a command
+		if (vc_isfuncenv(cntx)) {
+			frmNum++;
+			relFrmNum++;
+			argsPos += frmArgCount;
+		}
 		cntx = cntx->down;
 	}
 

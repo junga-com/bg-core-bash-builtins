@@ -394,18 +394,18 @@ int bgCore_builtin(WORD_LIST* list)
 			ret = EXECUTION_SUCCESS;
 		}
 
-		// bgCore scopeToJSON <retVar> <stackPosition>
+		// bgCore scopeToJSON <retVar> <stackPositionFromGlobal>
 		// returns a variabl scope (aka context) as a single JSON object (no type info -- just hierarchal name,values)
 		else if (strcmp("scopeToJSON", list->word->word)==0) {
 			list=list->next;
 			BGRetVar retVar; BGRetVar_initFromVarname(&retVar, list->word->word);
 			list=list->next;
-			int stackPosition = atoi(list->word->word);
+			int stackPositionFromGlobal = atoi(list->word->word);
 
 			// TODO: this algorithm may not handle temporary scopes for assignments before a command (see two places).
 			//       It might be OK if temp vars are always merged into the function scope by this point
 			VAR_CONTEXT* cntx = global_variables;
-			for (int i=0; i<stackPosition; i++)
+			for (int i=0; i<stackPositionFromGlobal; i++)
 				cntx = (cntx && cntx->up)?cntx->up:cntx;
 
 			char* jsonTxt = ShellContext_toJSON(cntx);
@@ -414,21 +414,15 @@ int bgCore_builtin(WORD_LIST* list)
 			ret = EXECUTION_SUCCESS;
 		}
 
-		// bgCore dbgVars <retVar> <stackPosition>
+		// bgCore dbgVars <retVar> <stackPositionFromGlobal>
 		// returns a variable scope (aka context) as and array of variable objects (with type information)
 		else if (strcmp("dbgVars", list->word->word)==0) {
 			list=list->next;
 			BGRetVar retVar; BGRetVar_initFromVarname(&retVar, list->word->word);
 			list=list->next;
-			int stackPosition = atoi((list)?list->word->word:"0");
+			int stackPositionFromGlobal = atoi((list)?list->word->word:"0");
 
-			// TODO: this algorithm may not handle temporary scopes for assignments before a command (see two places). It might be
-			//       OK if temp vars are always merged into the function scope by this point
-			VAR_CONTEXT* startCntx = global_variables;
-			for (int i=0; i<stackPosition; i++)
-				startCntx = (startCntx && startCntx->up)?startCntx->up:startCntx;
-
-			char* jsonTxt = ShellContext_dumpJSON(startCntx, DJ_DOHIERACHY);
+			char* jsonTxt = ShellContext_dumpJSON(stackPositionFromGlobal, DJ_DOHIERACHY);
 			outputValue(&retVar, jsonTxt);
 			xfree(jsonTxt);
 			ret = EXECUTION_SUCCESS;
