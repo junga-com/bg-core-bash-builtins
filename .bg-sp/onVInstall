@@ -1,0 +1,3 @@
+# $fullpath is the absolute path to this project folder
+[[ ! ":${BASH_LOADABLES_PATH}:" =~ :$fullpath/bin:  ]] && export BASH_LOADABLES_PATH="$fullpath/bin:${BASH_LOADABLES_PATH}"
+true

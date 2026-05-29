@@ -1,6 +1,7 @@
 
 #include "bg_import.h"
 
+#include <stdc.h>
 #include <flags.h>
 
 #include "bg_bashAPI.h"
@@ -47,7 +48,7 @@ int importBashLibrary(char* scriptName, int flags, char** retVar)
 {
 	SHELL_VAR* vImportedLibraries = ShellVar_find("_importedLibraries");
 	if (!vImportedLibraries) {
-		vImportedLibraries = ShellVar_assocCreateGlobal("vImportedLibraries");
+		vImportedLibraries = ShellVar_assocCreateGlobal("_importedLibraries");
 	}
 
 	// even though this builtin implementation does not need L1 and L2, we must ensure that they are empty because the script
@@ -67,29 +68,52 @@ int importBashLibrary(char* scriptName, int flags, char** retVar)
 
 	bgtrace1(1,"STR importBashLibrary(%s)\n",scriptName); bgtracePush();
 
-	// find the library in the manifest or in the system paths
-	ManifestRecord targetRec;
-	ManifestRecord foundManRec = manifestGet(NULL, NULL, ManifestRecord_assign(&targetRec, NULL,NULL,scriptName,NULL), importManifestCriteria);
-	if (!foundManRec.assetPath) {
-		if (!(flags&im_devOnlyFlag))
-			__bgtrace("import searching paths for '%s'\n",scriptName);
+	ManifestRecord foundManRec = {0};
 
-		bgtrace0(2,"not found in manifest ... searching paths\n");
-		foundManRec.assetPath = findInLibPaths(scriptName);
-
-		if (!foundManRec.assetPath) {
-			bgtrace0(2,"not found searching paths either. giving up\n");
+	if (scriptName && strchr(scriptName, '/')) {
+		if (!fsExists(scriptName)) {
+			bgtrace0(2,"resolved path does not exist. giving up\n");
 			if (!(flags&im_quietFlag))
-				assertError(NULL,"import: bash library not found in manifest nor in any system path. Default system path is '/usr/lib'. scriptName='%s'", scriptName);
+				assertError(NULL,"import: resolved path does not exist. scriptName='%s'", scriptName);
+
 			xfree(lookupName);
 			ShellVar_set(vL1,"_importSetErrorCode");
 			ShellVar_set(vL2,"_importSetErrorCode");
-			bgtracePop(); bgtrace1(2,"END importBashLibrary(%s)\n",scriptName);
+			bgtracePop();
+			bgtrace1(2,"END importBashLibrary(%s)\n",scriptName);
 			return 202;
 		}
+
+		foundManRec.assetPath = savestring(scriptName);
 	} else {
-		if (!fsExists(foundManRec.assetPath)) {
-			return assertError(NULL,"import: path found in manifest for '%s' does not exist. Ussually this means the hostmanifest file needs to be rebuilt.", scriptName);
+		ManifestRecord targetRec;
+		foundManRec = manifestGet(NULL, NULL, ManifestRecord_assign(&targetRec, NULL,NULL,scriptName,NULL), importManifestCriteria);
+
+		if (!foundManRec.assetPath) {
+			if (!(flags&im_devOnlyFlag))
+				__bgtrace("import searching paths for '%s'\n",scriptName);
+
+			bgtrace0(2,"not found in manifest ... searching paths\n");
+			foundManRec.assetPath = findInLibPaths(scriptName);
+
+			if (!foundManRec.assetPath) {
+				bgtrace0(2,"not found searching paths either. giving up\n");
+				if (!(flags&im_quietFlag))
+					assertError(NULL,"import: bash library not found in manifest nor in any system path. Default system path is '/usr/lib'. scriptName='%s'", scriptName);
+
+				xfree(lookupName);
+				ShellVar_set(vL1,"_importSetErrorCode");
+				ShellVar_set(vL2,"_importSetErrorCode");
+				bgtracePop();
+				bgtrace1(2,"END importBashLibrary(%s)\n",scriptName);
+				return 202;
+			}
+		} else {
+			if (!fsExists(foundManRec.assetPath)) {
+				xfree(lookupName);
+				ManifestRecord_free(&foundManRec);
+				return assertError(NULL,"import: path found in manifest for '%s' does not exist. Ussually this means the hostmanifest file needs to be rebuilt.", scriptName);
+			}
 		}
 	}
 

@@ -8,12 +8,15 @@ builtin implementations.
 
 'import' is its own builtin because it is unique in that it should not run in a new function context. Most other library functions
 should run in a new function context so it is convenient to have a bash shell function that starts with a conditional block that
-deferes to the bgCore builtin if its present and uses its bash implementation if not.
+defers to the bgCore builtin if its present and uses its bash implementation if not.
 
 The bgCore.so should be installed in the /usr/lib/bash system folder or in a folder that is listed in the BASH_LOADABLES_PATH environment
 variable.
 
 ### BUILDING:
+The configure file errors out when building on a system with a bash version other than the one it was last built and tested on.
+See the includeTemp/README.md for details.
+
 run ...
    <projRoot>$ ./configure && make
 

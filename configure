@@ -7,6 +7,37 @@
 #        the builtin taget(s) contained in this project. The deps.awk script produces explicit rules for all code in the project.
 #
 
+# Verify that we are building against the Bash version this project
+# was developed and tested against.
+bashVersion="$(bash --version | head -n1 | sed -E 's/.*version ([0-9]+\.[0-9]+).*/\1/')"
+
+requiredVersion="5.2"
+
+if [ "$bashVersion" != "$requiredVersion" ]; then
+	cat >&2 <<-EOF
+		ERROR:
+		   This project was developed against GNU Bash $requiredVersion.
+
+		   The implementation uses internal Bash APIs and private header files
+		   (e.g. flags.h, execute_cmd.h) that are not part of Bash's public
+		   compatibility interface.
+
+		   You appear to be building against a different Bash version.
+		       Expected Bash version : $requiredVersion
+		       Detected Bash version : $bashVersion
+
+		   The code will likely require source changes before it will compile
+		   and run correctly against this Bash version.
+
+		   If you wish to proceed, read the includeTemp/README.md file and increment
+		   the requiredVersion= in this configure script to match the new version to
+		   supress this message.
+
+		Aborting.
+		EOF
+	exit 1
+fi
+
 # this is a space separated list of folders where a distro might place the loadable builtin makefile.
 # it might alsways be /usr/lib/bash but just in case your distro does it differently, here is the place to add that info
 pathsToTry="/usr/lib/bash"

@@ -17,9 +17,19 @@ int bgtraceIndentLevel=0;
 void bgtraceOn()
 {
 	if (!_bgtraceFD) {
-		_bgtraceFD=fopen("/tmp/bgtrace.out","a+");
+		const char* home = getenv("HOME");
+		const char* tracePath = "/tmp/bgtrace.out";
+		char pathBuf[PATH_MAX];
+
+		if (home && *home) {
+			snprintf(pathBuf, sizeof(pathBuf), "%s/.bgtrace.out", home);
+			tracePath = pathBuf;
+		}
+
+		_bgtraceFD = fopen(tracePath, "a+");
+
 		if (!_bgtraceFD)
-			fprintf(stderr, "FAILED to open trace file '/tmp/bgtrace.out' errno='%d'\n", errno);
+			fprintf(stderr, "FAILED to open trace file '%s' errno='%d'\n", tracePath, errno);
 		else
 			bgtrace0(0, "BASH bgCore trace started\n");
 	}

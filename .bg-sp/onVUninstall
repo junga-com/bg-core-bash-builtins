@@ -1,0 +1,2 @@
+export BASH_LOADABLES_PATH="$(__subtractPathElement "$BASH_LOADABLES_PATH" "$fullpath/bin")"
+true

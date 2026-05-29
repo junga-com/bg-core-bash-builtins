@@ -26,5 +26,5 @@ function top()
 	echo "top:after"
 }
 
-foo "$@"
-#top "$@"
+#foo "$@"
+top "$@"

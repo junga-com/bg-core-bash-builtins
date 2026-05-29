@@ -4,6 +4,7 @@
 #include <execute_cmd.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <assert.h>
 
 #include "BGString.h"
 #include "bg_json.h"
@@ -158,7 +159,7 @@ SHELL_VAR* ShellVar_create(char* varname)
 void ShellVar_setS(char* varname, char* value)
 {
 	if (valid_array_reference(varname,VA_NOEXPAND))
-		assign_array_element(varname,value,0);
+		assign_array_element(varname,value,0, (array_eltstate_t *)NULL);
 	else {
 		SHELL_VAR* var = ShellVar_create(varname);
 		bind_variable_value(var,value,0);
@@ -879,6 +880,10 @@ char* BGRetType_toString(BGRetType rt)
 		case rt_set:       return "rt_set";
 		case rt_arrayRef:  return "rt_arrayRef";
 		case rt_noop:      return "rt_noop";
+		default:
+			fprintf(stderr, "invalid BGRetType: %d\n", (int)rt);
+			assert(0 && "invalid BGRetType");
+			return "<invalid BGRetType>";
 	}
 }
 
