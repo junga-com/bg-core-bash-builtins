@@ -838,7 +838,6 @@ char* ShellContext_toJSON(VAR_CONTEXT* cntx)
 	while ((bVar=AssocSortedItr_next(&itr))) {
 		char* name = bVar->key;
 		SHELL_VAR* vValue = (SHELL_VAR*)bVar->data;
-		//__bgtrace("!!! ctxToJson name='%s'  varname='%s'  type='%s'\n",  name, vValue->name, BGRetType_toString(ShellVar_getType(vValue)) );
 
 		// 'finish' the last attribute (or tOpen we wrote before the loop)
 		// we do it this way so that we can write the ',' only if required
@@ -859,7 +858,6 @@ char* ShellContext_toJSON(VAR_CONTEXT* cntx)
 		BGString_appendf(&jsonTxt,"", "%s%*s", fieldEnding, indentLevel*3,"");
 	BGString_appendf(&jsonTxt,"", "%c", tClose);
 
-	//__bgtrace("!!! ctxToJson Done = '%s'\n",  jsonTxt.buf);
 	return jsonTxt.buf;
 }
 
@@ -1041,7 +1039,6 @@ char* ShellContext_dumpJSON(int stackPositionFromGlobal, int flags)
 			while ((bVar=AssocSortedItr_next(&itr))) {
 				char* name = bVar->key;
 				SHELL_VAR* vValue = (SHELL_VAR*)bVar->data;
-				//__bgtrace("!!! ctxToJson name='%s'  varname='%s'  type='%s'\n",  name, vValue->name, BGRetType_toString(ShellVar_getType(vValue)) );
 
 				BGString tags; BGString_init(&tags, 50);
 
@@ -1115,6 +1112,5 @@ char* ShellContext_dumpJSON(int stackPositionFromGlobal, int flags)
 	// end the vars array. '1'(true) means that the list of vars was not empty (we wrote the contextName before the loop so there is at least one)
 	BGString_jsonEnd(&jsonTxt, "]", 1);
 
-	//__bgtrace("!!! ctxToJson Done = '%s'\n",  jsonTxt.buf);
 	return jsonTxt.buf;
 }

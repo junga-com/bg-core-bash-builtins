@@ -95,7 +95,6 @@ char* manifestExpandOutStr(ManifestRecord* rec, char* outputStr)
 // criteria or one with all null fields if no record matches.
 ManifestRecord manifestGet(char* manFile, char* outputStr, ManifestRecord* target, ManifestFilterFn filterFn)
 {
-//fprintf(stderr, "\n!!! starting manifestGet(%s, %s, (\n\tline:'%s'\n\tpkg:'%s'\n\ttype:'%s'\n\tname:'%s'\n\tpath:'%s'\n))\n", manFile, outputStr, target->line,target->pkgName,target->assetType,target->assetName,target->assetPath);
 	ManifestRecord retVal; ManifestRecord_assign(&retVal, NULL,NULL,NULL,NULL);
 
 	// if the caller did not specify any filters, we interpret it as there can not be any match.

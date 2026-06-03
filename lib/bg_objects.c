@@ -21,10 +21,9 @@ void assertObjExpressionError(WORD_LIST* opts, char* fmt, ...)
 	// now add the opts to the front
 	args = WordList_join(opts, args);
 
-	bgtrace1(1, "!!! assertObjExpressionError in builtin: %s\n", msg.buf);
 	BGString_free(&msg);
 
-	_bgtraceStack();
+	//_bgtraceStack();
 
 	args = WordList_unshift(args, "assertObjExpressionError");
 
@@ -116,11 +115,11 @@ int BashObjRef_init(BashObjRef* pRef, char* objRefStr)
 	if (strncmp(ps,"_bgclassCall",12)!=0)
 		return 0; // assertError(NULL,"BashObjRef_init: malformed <objRef> does not start with '_bgclassCall'\n\tobjRef='%s'\n", objRefStr);
 	ps+=12;
-	while (ps && *ps && whitespace(*ps)) ps++;
+	while (*ps && whitespace(*ps)) ps++;
 
 	// ps should be pointing at the start of the <oid> now
 	char* pe=ps;
-	while (pe && *pe && !whitespace(*pe)) pe++;
+	while (*pe && !whitespace(*pe)) pe++;
 	if ((pe-ps) > sizeof(pRef->oid)-1)
 		return 0; // assertError(NULL,"BashObjRef_init: oid name is too large (>%d)\n\tobjRef='%s'\n", sizeof(pRef->oid)-1, objRefStr);
 	strncpy(pRef->oid, ps, pe-ps); pRef->oid[pe-ps]='\0';
@@ -128,7 +127,7 @@ int BashObjRef_init(BashObjRef* pRef, char* objRefStr)
 
 	// ps should be pointing at the start of <className> now
 	ps=pe;
-	while (pe && *pe && !whitespace(*pe)) pe++;
+	while (*pe && !whitespace(*pe)) pe++;
 	if ((pe-ps) > sizeof(pRef->className)-1)
 		return 0; // assertError(NULL,"BashObjRef_init: className is too large (>%d)\n\tobjRef='%s'\n", sizeof(pRef->className)-1, objRefStr);
 	strncpy(pRef->className, ps, pe-ps); pRef->className[pe-ps]='\0';
@@ -346,7 +345,6 @@ void BashObj_initFromObjRef(BashObj* pObj, char* objRefStr)
 
 void BashObj_setupMethodCallContextDone(BashObj* this)
 {
-	//__bgtrace("!!! %p : FREEING namerefMembers in BashObj_setupMethodCallContextDone\n", this->namerefMembers);
 	if (this->namerefMembers) {
 		hash_flush(this->namerefMembers, NULL);
 		hash_dispose(this->namerefMembers);
@@ -588,7 +586,6 @@ BashObj* ConstructObject(WORD_LIST* args)
 	if (ShellAtGlobalScope()) {
 		needsPopping = 1;
 		ShellPushFunctionScope("ConstructObject");
-		bgtrace2(2, "!!!### pushing var ctx for 'ConstructObject %s %s'\n",_CLASS, _objRefVar);
 	}
 
 	int hasCtorThrownException = 0;
@@ -647,10 +644,8 @@ BashObj* ConstructObject(WORD_LIST* args)
 
 	if (needsPopping) {
 		ShellPopFunctionScope();
-		bgtrace2(2,"!!!### popping var ctx for 'ConstructObject %s %s'\n\n",_CLASS, _objRefVar);
 	}
 
-//__bgtrace("!!! %p : FREEING namerefMembers in ConstructObject\n", newObj->namerefMembers);
 	BashObj_setupMethodCallContextDone(newObj);
 	WordList_free(hierarchyList);
 
@@ -822,14 +817,12 @@ int BashObj_setupMethodCallContext(BashObj* pObj, BashObjectSetupMode mode, char
 		if (assoc_p(pObj->vThis)) {
 			if (! pObj->namerefMembers) {
 				pObj->namerefMembers = hash_create(0);
-//__bgtrace("!!! %p : making namerefMembers\n", pObj->namerefMembers);
 			}
 			ObjMemberItr i;
 			for (BUCKET_CONTENTS* item=ObjMemberItr_init(&i,pObj, ovt_both); item; item=ObjMemberItr_next(&i)) {
 				if (strcmp(item->key,"0")!=0 && strcmp(item->key,"_Ref")!=0 && item->data ) {
 					if (!assoc_reference(pObj->namerefMembers, item->key)) {
 						if (strncmp(item->data, "_bgclassCall",12)==0) {
-							bgtrace1(3,"!!! item->key='%s'\n", item->key);
 							char* memOid = extractOID(item->data);
 							ShellVar_refCreateSet(item->key, memOid);
 							xfree(memOid);
@@ -954,7 +947,6 @@ void DeclareClassEnd(char* className)
 		ShellVar_refCreateSet("newClass",className);
 		BashObj* pNewClass = BashObj_find(className, NULL,0);
 		BashObj_setupMethodCallContext(pNewClass, sm_wholeShebang, NULL);
-//__bgtrace("!!! %p : FREEING namerefMembers in DeclareClassEnd\n", pNewClass->namerefMembers);
 		BashObj_free(pNewClass);
 		ShellVar_refUnsetS("static");
 		ShellVar_refCreateSet("static", className);
@@ -1633,8 +1625,10 @@ int _bgclassCall(WORD_LIST* list)
 
 			// set these in case of error report
 			xfree(_rsvMemberName);
-			_rsvMemberName = methodArgs->word->word;
+			_rsvMemberName = savestring(methodArgs->word->word);
 			ShellVar_setS("_rsvMemberName",_rsvMemberName);
+
+
 
 			char* _METHOD_key = save2string("_static::",methodArgs->word->word);
 			methodArgs = methodArgs->next;
@@ -1652,7 +1646,6 @@ int _bgclassCall(WORD_LIST* list)
 			for (BUCKET_CONTENTS* item=AssocItr_first(&i,assoc_cell(vStatic)); item; item=AssocItr_next(&i)) {
 				if (strcmp(item->key,"0")!=0 && strcmp(item->key,"_Ref")!=0 && item->data ) {
 					if (strncmp(item->data, "_bgclassCall",12)==0) {
-						bgtrace1(3,"!!! item->key='%s'\n", item->key);
 						char* memOid = extractOID(item->data);
 						ShellVar_refCreateSet(item->key, memOid);
 						xfree(memOid);
@@ -1920,7 +1913,6 @@ int _bgclassCall(WORD_LIST* list)
 
 
 	// cleanup before we leave
-//__bgtrace("!!! %p : FREEING namerefMembers in _bgclassCall\n", objInstance.namerefMembers);
 	BashObj_setupMethodCallContextDone(&objInstance);
 	WordList_free(methodArgsToFree);                 remove_unwind_protect();
 	xfree(_rsvMemberTypeStr);                        remove_unwind_protect();

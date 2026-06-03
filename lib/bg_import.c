@@ -70,6 +70,9 @@ int importBashLibrary(char* scriptName, int flags, char** retVar)
 
 	ManifestRecord foundManRec = {0};
 
+	// to test the inTerminal bgexit --complete bug, make this condition be false and
+	// bg-debugCntr vinstall <bg-coreSandbox> It will make import on a plugin fail and call assertError
+	//if (0 && scriptName && strchr(scriptName, '/')) {
 	if (scriptName && strchr(scriptName, '/')) {
 		if (!fsExists(scriptName)) {
 			bgtrace0(2,"resolved path does not exist. giving up\n");

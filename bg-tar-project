@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# Get project directory name (current directory)
+PROJECT_NAME="$(basename "$(pwd)")"
+ARCHIVE_NAME="${PROJECT_NAME}.tar.gz"
+
+# Ensure .tarignore exists
+if [[ ! -f .tarignore ]]; then
+  echo -e ".git/\n*.gz" > .tarignore
+  echo "created .tarignore with minimum content"
+fi
+
+# Create tar from project contents, not the parent directory
+tar $1 \
+  --exclude-from=.tarignore \
+  -czf "${ARCHIVE_NAME}" \
+  *
+
+echo "Created ${ARCHIVE_NAME}"

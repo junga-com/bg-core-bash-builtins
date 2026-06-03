@@ -16,6 +16,12 @@ static SHELL_VAR* hash_lookup(char* name, HASH_TABLE* hashed_vars)
 	return (bucket ? (SHELL_VAR *)bucket->data : NULL);
 }
 
+static void WordList_free_unwind(void *p)
+{
+  WORD_LIST *list = (WORD_LIST *)p;
+  if (list)
+    dispose_words(list);
+}
 
 CallFrame* callFrames = NULL;
 
@@ -45,7 +51,6 @@ CallFrame* callFrames_push()
 void callFrames_pop()
 {
 	if (callFramesPos<=0) {
-		__bgtrace("!!! bgCore BUILTIN logic ERROR. trying to pop the CallFrame (aka jmpPoint) but none on the stack #########################################\n ");
 		exit(205);
 	}
 
@@ -57,24 +62,24 @@ void callFrames_pop()
 void callFrames_longjump(int exitCode)
 {
 	if (callFramesPos > 0) {
-		__bgtrace("!!! LONGJMPing at '%d'\n", callFramesPos-1);
 
 		CallFrame* pFrm = &(callFrames[--callFramesPos]);
 		run_unwind_frame(pFrm->name);
 		xfree(pFrm->name);
 
 		longjmp(pFrm->jmpBuf, exitCode);
-		__bgtrace("!!! WOOPS !!!! jump didnt jump!\n");
 	}
-	__bgtrace("!!! bgCore BUILTIN logic ERROR. trying to jump but none on the stack #########################################\n ");
 	exit(205);
 }
 
 
-// This C function invokes the bash function assertError.  It may or may not return from the assertError bash function call. If the
-// script has a Try/Catch block in the same PID as the builtin is running, then it will return and all the C functions on the stack
-// have end so that the top level builtin function can return. We use setjmp/longjmp to resume at that top level builtin function
-// and the unwind_prot.c module to clean up any resources.
+// This C function invokes the bash function assertError. This C function will never return.
+// Case 1:
+// We call ShellFunc_execute to invoke the bash assertError and it never returns because it
+// ends the executing pid.
+// Case 2:
+// The bash code has a Try/Catch block in the executing pid and ShellFunc_execute returns
+// to this function which then calls callFrames_longjump to jump to the top of the builtin
 //
 // If the assertError is not being caught, then our PID will be killed and we do not need to worry b/c it will not return
 // If the assertError is being caught, it will kill any intermediate PIDs and then send the PID with the Try/Catch a SIG2. If this
@@ -93,20 +98,19 @@ int assertError(WORD_LIST* opts, char* fmt, ...)
 	BGString_appendfv(&msg, "", fmt, vargs);
 	args = WordList_unshift(args, msg.buf);
 
-	// now add the opts to the front
-	args = WordList_join(opts, args);
+	if (opts) {
+		args = WordList_join(WordList_copy(opts), args);
+		add_unwind_protect((Function *)WordList_free_unwind, args);
+	}
 
-	__bgtrace("!!! assertError in builtin: %s\n", msg.buf);
 	BGString_free(&msg);
 
-	_bgtraceStack();
+	//_bgtraceStack();
 
 	SHELL_VAR* func = ShellFunc_find("assertError");
 	if (func)
 		ShellFunc_execute(func, args);
 	else
-		__bgtrace("!!! ERROR: throwing an assertError from C builtin code but the 'assertError' shell function is not found");
-	WordList_free(args);
 
 	callFrames_longjump(36);
 	return 36;
@@ -118,7 +122,7 @@ void bgWarn(char* fmt, ...)
 	va_list vargs;   SH_VA_START (vargs, fmt);
 	BGString_appendfv(&msg, "", fmt, vargs);
 
-	__bgtrace("!!! WARNING in builtin: %s\n", msg.buf);
+
 	BGString_free(&msg);
 
 	__bgtrace("\t");
@@ -236,16 +240,20 @@ int ShellFunc_executeS(WORD_LIST* args)
 	if (!func)
 		assertError(NULL,"ShellFunc_execute: could not find function '%s'",funcname);
 
-	ShellVar_unsetS("catch_errorCode");
+	ShellVar_unsetS("catch_errorBuiltinFlag");
 
 	int ret = execute_shell_function(func, args);
 
-	char* exceptionTest = ShellVar_getS("catch_errorCode");
+	char* exceptionTest = ShellVar_getS("catch_errorBuiltinFlag");
 	if ( exceptionTest && *exceptionTest ) {
-		__bgtrace("!!! ShellFunc_execute: detected assertError, errorCode='%s' descr='%s'\n",  ShellVar_getS("catch_errorCode"), ShellVar_getS("catch_errorDescription"));
+		// We are converting the bash-level caught exception into a C-level longjmp.
+		// Clear it so outer nested ShellFunc_execute() calls do not consume it again.
+		ShellVar_unsetS("catch_errorBuiltinFlag");
+
 		callFrames_longjump(36);
 		return 34;
 	}
+
 	return ret;
 }
 
@@ -253,17 +261,22 @@ int ShellFunc_execute(SHELL_VAR* func, WORD_LIST* args)
 {
 	WORD_LIST* argsWithFN = WordList_unshift(args, func->name);
 
-	ShellVar_unsetS("catch_errorCode");
+	ShellVar_unsetS("catch_errorBuiltinFlag");
 
 	int ret = execute_shell_function(func, argsWithFN);
 
 	WordList_freeUpTo(&argsWithFN, args);
-	char* exceptionTest = ShellVar_getS("catch_errorCode");
+
+	char* exceptionTest = ShellVar_getS("catch_errorBuiltinFlag");
 	if ( exceptionTest && *exceptionTest ) {
-		__bgtrace("!!! ShellFunc_execute: detected assertError, errorCode='%s' descr='%s'\n",  ShellVar_getS("catch_errorCode"), ShellVar_getS("catch_errorDescription"));
+		// We are converting the bash-level caught exception into a C-level longjmp.
+		// Clear it so outer nested ShellFunc_execute() calls do not consume it again.
+		ShellVar_unsetS("catch_errorBuiltinFlag");
+
 		callFrames_longjump(36);
 		return 34;
 	}
+
 	return ret;
 }
 

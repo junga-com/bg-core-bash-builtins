@@ -83,13 +83,13 @@ int bgCore_builtin(WORD_LIST* list)
 	// a Try: / Catch: block in bash that is catching the error, it will longjump back to here and continue to execute the true
 	// condition which will exit back to the parser flow.
 	CallFrame* callFrame = callFrames_push();
-	if (setjmp(callFrame->jmpBuf)) {
+	int jumpRC = setjmp(callFrame->jmpBuf);
+	if (jumpRC) {
 		// assertError() was called .. we just need to end without doing anything so that the bash assertError mechanism can take
 		// over
-		__bgtrace("!!! caught the LONGJMP '%d'\n", bgCoreNestCount);
 		bgtracePop();
 		bgtrace2(1,"### %d END-JMP %s\n", callFrames_getPos()+1, label);
-		ret = (EXECUTION_FAILURE);
+		ret = (jumpRC);
 	}
 
 	else {
@@ -506,18 +506,21 @@ int import_builtin(WORD_LIST* args)
 {
 	int ret = EXECUTION_FAILURE;
 
-	char* label = ""; if (!label);
+	char* label = WordList_toString(args); if (!label);
 	bgtrace0(1,"###############################################################################################################\n");
-	bgtrace2(1,"### %d START import %s \n", callFrames_getPos()+1, label=WordList_toString(args));
+	bgtrace2(1,"### %d START import %s \n", callFrames_getPos()+1, label);
 	bgtracePush();
 
 	CallFrame* callFrame = callFrames_push();
-	if (setjmp(callFrame->jmpBuf)) {
+	int jumpRC = setjmp(callFrame->jmpBuf);
+	if (jumpRC) {
+		// return from longjump path
+		ret = (jumpRC);
 		bgtracePop();
 		bgtrace2(1,"### %d END-JMP %s\n", callFrames_getPos()+1, label);
-		ret = (EXECUTION_FAILURE);
 
 	} else {
+		// primary path
 		char* param = (args) ? args->word->word : NULL;
 		int importFlags = 0;
 		while (param && *param == '-') {
@@ -532,28 +535,33 @@ int import_builtin(WORD_LIST* args)
 			args = args->next;
 			param = (args) ? args->word->word : NULL;
 		}
-		if (!args)
-			return assertError(NULL,"<scriptname> is a required argument to import\n");
-		char* scriptName = args->word->word;
-		args = args->next;
+		if (!args) {
+			// this does not return. setting ret is a backup
+			ret = assertError(NULL,"<scriptname> is a required argument to import\n");
+		} else {
+			char* scriptName = args->word->word;
+			args = args->next;
 
-		char* scriptPath = NULL;
+			char* scriptPath = NULL;
 
-		ret = importBashLibrary(scriptName, importFlags, &scriptPath);
+			ret = importBashLibrary(scriptName, importFlags, &scriptPath);
 
-		if (importFlags&im_getPathFlag) {
-			if (args)
-				ShellVar_setS(args->word->word, scriptPath);
-			else
-				printf("%s\n",scriptPath);
+			if (importFlags&im_getPathFlag) {
+				if (args)
+					ShellVar_setS(args->word->word, scriptPath);
+				else
+					printf("%s\n",scriptPath);
+			}
+			if (scriptPath) xfree(scriptPath);
 		}
-		if (scriptPath) xfree(scriptPath);
-
 
 		callFrames_pop();
- 		bgtracePop();
- 		bgtrace2(1,"### %d END-NORM import %s\n\n", callFrames_getPos()+1, label);
+		bgtracePop();
+		bgtrace2(1,"### %d END-NORM import %s\n\n", callFrames_getPos()+1, label);
 	}
+
+	if (label)
+	    xfree(label);
 
 	return ret;
 }

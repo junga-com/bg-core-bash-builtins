@@ -1,0 +1,7 @@
+.git/
+*.gz
+*.tar.gz
+bin/
+bin
+.bglocal/
+tags
