@@ -1108,7 +1108,7 @@ char* ShellVarFlagsToString(int flags) {
 //    _gitIgnorePath     : (char*)      determines whether the expressions from a .gitignore files are used to exclude the files
 //                                      that git ignores from consideration.
 //                                      NULL : do not exclude the git ignored files
-//                                      "<glean>" : use the .gitignore file if found in the ussual place
+//                                      "<glean>" : use the .gitignore file if found in the usual place
 //                                      <pathToGitIgnore> : any other string is interpretted as the path to the .gitignore file to use.
 //    excludePaths       : (WORD_LIST*) a list of files or folders to exclude. Can contain glob characters.
 WORD_LIST* fsExpandFilesC(
@@ -1143,13 +1143,12 @@ WORD_LIST* fsExpandFilesC(
 
 	WORD_LIST* recursiveOpt = (recurseFlag) ? NULL : WordList_fromString("-maxdepth 0", IFS,0);
 
-
-	// if the user supplied more than 1 find test expression, it may contain 'or' logic so enclose it in () so that we can treat it
-	// like one and'd filter criteria
-	if (findExpressions && findExpressions->next) {
-		findExpressions = WordList_unshift(findExpressions, "'('");
-		WordList_push(&findExpressions, "')'");
-	}
+	// wrap the findExpressions in parenthesis adding a -print. This will be the right hand side of
+	// ( PRUNES ) -o ( <findExpressions> -print )
+	// If we dont have a -print find's implicit print will include the names of pruned folders
+	findExpressions = WordList_unshift(findExpressions, "'('");
+	WordList_push(&findExpressions, "-print");
+	WordList_push(&findExpressions, "')'");
 
 	// calculate the commonPrefix which is the the effective root folder of the entire operation
 	char* commonPrefix = NULL;
@@ -1163,7 +1162,7 @@ WORD_LIST* fsExpandFilesC(
 
 	// add the gitignore contents to the excludePaths if called for
 	if (_gitIgnorePath) {
-		if (strcmp(_gitIgnorePath, "<glean>"))
+		if (strcmp(_gitIgnorePath, "<glean>")==0)
 			_gitIgnorePath = save2string(commonPrefix, ".gitignore");
 		else
 			_gitIgnorePath = savestring(_gitIgnorePath);
@@ -1268,7 +1267,6 @@ WORD_LIST* fsExpandFilesC(
 	findArgs = WordList_join(findArgs, findPruneExpr);
 	findArgs = WordList_join(findArgs, fTypeOpt);
 	findArgs = WordList_join(findArgs, findExpressions);
-	//WordList_push(&findArgs, "-print0");
 	WordList_push(&findArgs, ">");
 	WordList_push(&findArgs, tmpFilename);
 	WordList_push(&findArgs, "2>");
