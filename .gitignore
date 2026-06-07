@@ -4,3 +4,13 @@ build/*.o
 *.o
 .bglocal/*
 tags
+
+
+.bglocal/
+tags
+pkgControl/files
+*.changes
+*.deb
+*.rpm
+*.upload
+.todo.md

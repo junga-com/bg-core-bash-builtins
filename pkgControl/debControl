@@ -1,0 +1,11 @@
+Source: bg-core-bash-builtins
+Section: admin
+Priority: optional
+Maintainer: Robert E. Griffith <bobg@junga.com>
+Vcs-Browser: https://github.com/junga-com/bg-core-bash-builtins
+Vcs-git: git@github.com/junga-com/bg-core-bash-builtins
+
+Package: bg-core-bash-builtins
+Architecture: %ARCH%
+Depends: bash (>= 5.2), bash (<< 5.3), libc6
+Description: Optional addon to bg-core that improves performance 
