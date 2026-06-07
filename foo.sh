@@ -1,13 +1,10 @@
+#!/bin/bash
 
 echo "here in test.sh"
 
+enable -f ./bin/bgCore.so bgCore
 
-bgtrace "From foo.sh Script Global Scope"
-builtin bgCore ShellContext_dump
+cd ../bg-dev
 
-function foo()
-{
-	bgtrace "From foo.sh Script Function Scope"
-	builtin bgCore ShellContext_dump
-}
-foo
+builtin bgCore manifestGet "plugin" "PackageAsset:.*"
+echo "here in test.sh"

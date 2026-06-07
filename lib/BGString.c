@@ -172,16 +172,19 @@ void BGString_replaceChar(BGString* pStr, char toReplace, char withThis)
 char* BGString_nextWord(BGString* pStr)
 {
 	char* pEnd=pStr->buf + pStr->len;
+
 	if (!pStr->itr) {
 		pStr->itr=pStr->buf;
 		while (pStr->itr < pEnd && *pStr->itr=='\0') pStr->itr++;
 		return pStr->itr;
+
 	} else if (pStr->itr >= pEnd) {
 		return NULL;
+
 	} else {
-		pStr->itr+=strlen(pStr->itr);
+		pStr->itr+=strlen(pStr->itr) +1;
 		// if the original string list had consequtive whitespace, we have to skip over consequtive nulls
 		while (pStr->itr < pEnd && *pStr->itr=='\0') pStr->itr++;
-		return (pStr->itr < pEnd) ? pStr->itr : NULL;
+		return *pStr->itr?pStr->itr:NULL;
 	}
 }

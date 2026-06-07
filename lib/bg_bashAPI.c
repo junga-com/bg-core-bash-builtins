@@ -1,6 +1,12 @@
 
 #include "bg_bashAPI.h"
 
+
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+
 #include <execute_cmd.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -1086,6 +1092,36 @@ char* ShellVarFlagsToString(int flags) {
 	return retVal.buf;
 }
 
+char **WordList_toArgv(WORD_LIST *list)
+{
+	int argc = 0;
+	WORD_LIST *tmp;
+
+	for (tmp = list; tmp; tmp = tmp->next)
+		argc++;
+
+	char **argv = xmalloc((argc + 1) * sizeof(char *));
+
+	int i = 0;
+	for (tmp = list; tmp; tmp = tmp->next)
+		argv[i++] = savestring(tmp->word->word);
+
+	argv[i] = NULL;
+
+	return argv;
+}
+
+void ArgvDispose(char **argv)
+{
+	if (!argv)
+		return;
+
+	for (int i = 0; argv[i]; i++)
+		xfree(argv[i]);
+
+	xfree(argv);
+}
+
 // Params:
 //    findStartingPoints : (WORD_LIST*) list of glob expressions to expand
 //    retVar             : (BGRetVar*)  specification for how the results are returned. If NULL, then results are returned as a
@@ -1143,18 +1179,14 @@ WORD_LIST* fsExpandFilesC(
 
 	WORD_LIST* recursiveOpt = (recurseFlag) ? NULL : WordList_fromString("-maxdepth 0", IFS,0);
 
-	// wrap the findExpressions in parenthesis adding a -print. This will be the right hand side of
-	// ( PRUNES ) -o ( <findExpressions> -print )
-	// If we dont have a -print find's implicit print will include the names of pruned folders
-	findExpressions = WordList_unshift(findExpressions, "'('");
-	WordList_push(&findExpressions, "-print");
-	WordList_push(&findExpressions, "')'");
 
 	// calculate the commonPrefix which is the the effective root folder of the entire operation
 	char* commonPrefix = NULL;
 	if (_gitIgnorePath || excludePaths) {
 		char* tmp = pathGetCommon(findStartingPoints);
-		if (tmp && *tmp!='\0')
+		if (strcmp(tmp, "/") == 0)
+			commonPrefix = savestring("/");
+		else
 			commonPrefix = save2string(tmp, "/");
 		xfree(tmp);
 	}
@@ -1192,19 +1224,48 @@ WORD_LIST* fsExpandFilesC(
 		WORD_LIST* _anyEntries = NULL;
 		for (WORD_LIST* excludePath=excludePaths; excludePath; excludePath=excludePath->next) {
 			char* path = savestring(excludePath->word->word);
-			int isDir = 0;
-			char* _expr = "-name"; for (char* t=path; *t; t++) if (*t=='/') { _expr="-path"; break;}
-			if (path-(strrchr(path,'/')) == strlen(path)-1 ) {
-				path[strlen(path)-1] = '\0';
-				isDir=1;
+
+			// skip empties
+			if (!path || !*path) {
+				xfree(path);
+				continue;
 			}
-			if (path && *path=='/') {
+
+			// remove a leading slash
+			if (*path == '/') {
 				char* tstr = path;
-				path=save2string(commonPrefix, tstr);
+				path = savestring(tstr + 1);
 				xfree(tstr);
 			}
+
+			// trailing slash means directory-only; check and remove
+			int isDir = 0;
+			char* slash = strrchr(path, '/');
+			if (slash && slash[1] == '\0') {
+				*slash = '\0';
+				isDir = 1;
+			}
+
+			// if it contains a / use --path
+			char* _expr = "-name";
+			for (char* t=path; *t; t++) if (*t=='/') {
+				 _expr="-path"; break;
+			}
+
+			// apply commonPrefix avoiding double slashes
+			if (*path == '/') {
+				char* tstr = path;
+				path = save2string(commonPrefix, path + 1);
+				xfree(tstr);
+			} else if (strchr(path, '/')) {
+				char* tstr = path;
+				path = save2string(commonPrefix, path);
+				xfree(tstr);
+			}
+			#
+
 			WORD_LIST** pList =( (isDir) ? &_folderEntries : &_anyEntries);
-			path = resaveWithQuotes(path, 1);
+			//path = resaveWithQuotes(path, 1);
 			*pList = WordList_unshift(*pList, path);
 			*pList = WordList_unshift(*pList, _expr);
 			*pList = WordList_unshift(*pList, "-o");
@@ -1214,11 +1275,11 @@ WORD_LIST* fsExpandFilesC(
 
 		//    "(" "(" -type d "(" -false "${_folderEntries[@]}" ")" ")" -o  "(" -false "${_anyEntries[@]}" ")"  ")" -prune -o
 		//     (-  (--         (---------------------------------) --)       (------------------------------)   -)
-		findPruneExpr = WordList_join(NULL,             WordList_fromString("'(' '(' -type d '(' -false"  ,IFS,0));
+		findPruneExpr = WordList_join(NULL,             WordList_fromString("( ( -type d ( -false"  ,IFS,0));
 		findPruneExpr = WordList_join(findPruneExpr,    _folderEntries);
-		findPruneExpr = WordList_join(findPruneExpr,    WordList_fromString("')' ')' -o '(' -false"       ,IFS,0));
+		findPruneExpr = WordList_join(findPruneExpr,    WordList_fromString(") ) -o ( -false"       ,IFS,0));
 		findPruneExpr = WordList_join(findPruneExpr,    _anyEntries);
-		findPruneExpr = WordList_join(findPruneExpr,    WordList_fromString("')' ')' -prune -o "        ,IFS,0));
+		findPruneExpr = WordList_join(findPruneExpr,    WordList_fromString(") ) -prune -o "        ,IFS,0));
 	}
 
 	xfree(commonPrefix);
@@ -1235,7 +1296,6 @@ WORD_LIST* fsExpandFilesC(
 			WordList_free(tmpP);
 		} else {
 			ppLast = &(p->next);
-			WordDesc_surroundWord(p->word,'"','"');
 			p=p->next;
 		}
 	}
@@ -1253,39 +1313,63 @@ WORD_LIST* fsExpandFilesC(
 
 
 	// buffer to read result file(s)
-	size_t bufSize = 100;
+	size_t bufSize = 4096;
 	char* buf =  xmalloc(bufSize);
 
 	// now compose the arguments to the find cmd and redirect output to tmp files
-	char* tmpFilename = mktempC("/tmp/bgCore.out.XXXXXXXXXX");
 	char* errOut = mktempC("/tmp/bgCore.errOut.XXXXXXXXXX");
 	WORD_LIST* findArgs = NULL;
 	findArgs = WordList_join(findArgs, findOpts);
 	findArgs = WordList_join(findArgs, findStartingPoints);
+
 	findArgs = WordList_join(findArgs, recursiveOpt);
 	findArgs = WordList_join(findArgs, findGlobalExpressions);
 	findArgs = WordList_join(findArgs, findPruneExpr);
+
+	// wrap the findExpressions in parenthesis adding a -print. This will be the right hand side of
+	// ( PRUNES ) -o ( <findExpressions> -print )
+	// If we dont have a -print find's implicit print will include the names of pruned folders
+	WordList_push(&findArgs, "(");
 	findArgs = WordList_join(findArgs, fTypeOpt);
+	if (findExpressions && findExpressions->next)
+		WordList_push(&findArgs, "(");
 	findArgs = WordList_join(findArgs, findExpressions);
-	WordList_push(&findArgs, ">");
-	WordList_push(&findArgs, tmpFilename);
-	WordList_push(&findArgs, "2>");
-	WordList_push(&findArgs, errOut);
+	if (findExpressions && findExpressions->next)
+		WordList_push(&findArgs, ")");
+	WordList_push(&findArgs, "-print");
+	WordList_push(&findArgs, ")");
 
 	// execute the cmdline. parse_and_execute will free the cmdline string
 	findArgs = WordList_unshift(findArgs, "find");
+	char** cmdlineTokens = WordList_toArgv(findArgs);
 	char* cmdline = WordList_toString(findArgs);
 	WordList_free(findArgs);
 
-	if (0!=parse_and_execute(cmdline, "bgCore", SEVAL_NOFREE | SEVAL_NOHIST | SEVAL_RESETLINE | SEVAL_NOHISTEXP | SEVAL_NONINT)) {
-		__bgtrace("bgfind cmdline='%s'\n", cmdline);
-		FILE* errOutFD = fopen(errOut, "r");
-		while (freadline(errOutFD, &buf, &bufSize) > -1) {
-			__bgtrace("   err: %s\n", buf);
-		}
-		assertError(NULL, "gnu find failed. \n\tcmdline='%s'\n", cmdline);
+	int pipefd[2];
+	if (pipe(pipefd) != 0)
+		assertError(NULL, "fsExpandFilesC: Could not create a pipe to run find. \n\tcmdline='%s'\n", cmdline);
+
+	// launch the find cmd in a fork
+	pid_t pid = fork();
+	if (pid == 0) {
+		close(pipefd[0]);               /* close read end */
+
+		dup2(pipefd[1], STDOUT_FILENO);
+		close(pipefd[1]);
+
+		// redirect stder to a file
+		int errfd = open(errOut, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+		if (errfd < 0)
+			_exit(127);
+		dup2(errfd, STDERR_FILENO);
+		close(errfd);
+
+		// this will not reuturn. exec find
+		execvp(cmdlineTokens[0], cmdlineTokens);
+		_exit(127);
 	}
-	xfree(cmdline);
+	close(pipefd[1]);                          /* close write end */
+	ArgvDispose(cmdlineTokens);
 
 	// if fsef_prefixToRemove is set, create a tmpVar to have BASH manipulate the value
 	SHELL_VAR* tmpVar = NULL;
@@ -1298,30 +1382,58 @@ WORD_LIST* fsExpandFilesC(
 		prefixCmd = saprintf("%s=${%s/#$%s}", tmpVar->name, tmpVar->name, vPrefixToRemove->name);
 	}
 
-	// now read the results from the tmp file
-	FILE* tmpFile = fopen(tmpFilename, "r");
+	// now read the results from find's pipe
 	int found = 0;
 	BGRetVar_startOutput(retVar);
 	WORD_LIST* resultList = NULL;
-	while (freadline(tmpFile, &buf, &bufSize) > -1) {
+
+	FILE *fp = fdopen(pipefd[0], "r");
+	while (fgets(buf, bufSize, fp)) {
+		buf[strcspn(buf, "\n")] = '\0';
+
 		if (fsef_prefixToRemove) {
 			ShellVar_set(tmpVar, buf);
 			parse_and_execute(prefixCmd, "bgCore", SEVAL_NOFREE | SEVAL_NOHIST | SEVAL_RESETLINE | SEVAL_NOHISTEXP | SEVAL_NONINT);
-			strcpy(buf, ShellVar_get(tmpVar));
+			strncpy(buf, ShellVar_get(tmpVar), bufSize-1);
+			buf[bufSize - 1] = '\0';
 		}
-		if (retVar)
+		if (retVar) {
 			outputValue(retVar, buf);
-		else
-			resultList = WordList_unshift(resultList, buf);
+		} else {
+			resultList = WordList_unshift(resultList, savestring(buf));
+		}
 		found = 1;
 	}
-	xfree(buf);
+	fclose(fp);
 
-	// TODO: rm the tmp files
-	unlink(tmpFilename);
+	/* collect child status */
+	int status;
+	waitpid(pid, &status, 0);
+	int rc;
+	if (WIFEXITED(status))
+		rc = WEXITSTATUS(status);
+	else if (WIFSIGNALED(status))
+		rc = 128 + WTERMSIG(status);
+	else
+		rc = 255;
+
+	// if find failed
+	if (rc != 0) {
+		__bgtrace("bgfind Failed(%d): cmdline='%s'\n", rc, cmdline);
+		FILE* errOutFD = fopen(errOut, "r");
+		while (freadline(errOutFD, &buf, &bufSize) > -1) {
+			__bgtrace("   err: %s\n", buf);
+		}
+		fclose(errOutFD);
+		unlink(errOut);
+		xfree(errOut);
+		assertError(NULL, "gnu find failed. \n\tcmdline='%s'\n", cmdline);
+	}
+	xfree(buf);
+	xfree(cmdline);
 	unlink(errOut);
-	xfree(tmpFilename);
 	xfree(errOut);
+
 
 	resultList = WordList_reverse(resultList);
 
@@ -1332,6 +1444,7 @@ WORD_LIST* fsExpandFilesC(
 
 	return resultList;
 }
+
 
 int fsExpandFiles(WORD_LIST* args)
 {
@@ -1367,7 +1480,7 @@ int fsExpandFiles(WORD_LIST* args)
 		else if ((optArg=BGCheckOpt("--gitignore", &args)))         _gitIgnorePath = "<glean>";
 		else if ((optArg=BGCheckOpt("--gitignore*", &args)))        _gitIgnorePath = (strcmp(optArg,"")==0) ? "<glean>" : optArg;
 		// exclude some results
-		else if ((optArg=BGCheckOpt("--exclude*", &args)))          excludePaths = WordList_unshiftQ(excludePaths, optArg);
+		else if ((optArg=BGCheckOpt("--exclude*", &args)))          excludePaths = WordList_unshift(excludePaths, optArg);
 		// native find (GNU utility) 'real' options (as opposed to find criteria and actions that also start with '-')
 		else if ((optArg=BGCheckOpt("-H|-L|-P", &args)))            findOpts = WordList_unshift(findOpts, optArg);
 		else if ((optArg=BGCheckOpt("-D*|-O*", &args)))             {findOpts = WordList_unshift(findOpts, optArg);findOpts = WordList_unshift(findOpts, param);}
@@ -1419,7 +1532,7 @@ int fsExpandFiles(WORD_LIST* args)
 			findExpressions = WordList_unshift(findExpressions, args->word->word);
 		} else {
 			// assume any other is a valid test expression, operator or positional option. If not, find will fail
-			findExpressions = WordList_unshiftQ(findExpressions, args->word->word);
+			findExpressions = WordList_unshift(findExpressions, args->word->word);
 		}
 
 		args = (args) ? args->next : NULL;
@@ -1457,19 +1570,19 @@ int fsExpandFiles(WORD_LIST* args)
 // Example:
 //    p1 = /var/lib/foo/data
 //    p2 = /var/lib/bar/five/fee
-//   out = /var/lib/
+//   out = /var/lib <- no trailing .
 char* pathGetCommon(WORD_LIST* paths)
 {
 	if (!paths)
 		return savestring("");
 
 	// init prefix with the first path. We assume that the last component of the path is a folder even if there is no trailing '/'
-	// if it is, infact a filename, it will be removed unless all paths are equal to that filename path which is not valid input.
+	// if it is, in fact a filename, it will be removed unless all paths are equal to that filename path which is not valid input.
 	char* prefix = savestring(paths->word->word);
 	int prefixLen = strlen(prefix);
 	while (prefixLen>0 && prefix[prefixLen-1] == '/') prefixLen--;
 
-	// now iterate over the rest of the pathes, each time shortening prefix if needed until its empty or matches some part of path
+	// now iterate over the rest of the paths, each time shortening prefix if needed until its empty or matches some part of path
 	for (WORD_LIST* tmp=paths->next; prefixLen>0 && tmp; tmp=tmp->next) {
 		char* tword = tmp->word->word;
 		int tlen = strlen(tword);
@@ -1480,7 +1593,7 @@ char* pathGetCommon(WORD_LIST* paths)
 		}
 	}
 
-	// the only time this function returns prefix with a trailing '/' is if all pathes are absolute but have no other common path.
+	// the only time this function returns prefix with a trailing '/' is if all paths are absolute but have no other common path.
 	if (prefixLen==0) {
 		int allAbs = 1;
 		for (WORD_LIST* tmp=paths; allAbs && tmp; tmp=tmp->next)

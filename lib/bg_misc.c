@@ -38,6 +38,7 @@ int isNumber(char* string) {
 	return (1);
 }
 
+
 char* savestringn(char* x, int n)
 {
 	char *p=(char *)strncpy (xmalloc (1 + n), (x),n);
@@ -320,4 +321,46 @@ char* mktempC(char* template)
 
 	//__bgtrace("mktempC='%s'\n", fn);
 	return fn;
+}
+
+// This supports the pattern of iterating the space separated words a buffer owned by the caller
+// mutating the buffer to add '\0' terminators in the space between
+// See ManifestRecord_assignFromInputLine for an example of use.
+// When it gets to the real '\0' at the end of the buffer if stops there and wont move past.
+//
+// State:
+//  one   two three\0
+//  ^ <- s on input
+//  one\0 two three\0
+//        ^ <- return
+//
+// Ownership:
+// This does not change the allocation. the buffer can be any writable memory that is null terminated..
+// this mutatates the buffer as it goes. It only returns points to positions inside the buffer.
+//
+// Return Value:
+// if there was another token in the buffer it points to the start of that token
+// otherwise it points to the terminating '\0' at the end of the buffer indicating that
+// there are not more tokens to consume
+char* strConsumeNext(char* s) {
+	// dont move past a null
+	if (!s || !*s)
+		return NULL;
+
+	// input should be posisiotned at the start of a word
+	if (whitespace(*s)) {
+		bgWarn("strConsumeNext: input is not positioned on a word ='%s'", s);
+		return s;
+	}
+
+	while (*s && !whitespace(*s)) s++; // advance to first WS or NULL
+
+	if (!*s)
+		return s;
+
+	*s++ = '\0';
+
+	while (*s && whitespace(*s)) s++; // advance to first non-WS or NULL
+
+	return s;
 }

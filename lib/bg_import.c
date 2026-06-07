@@ -9,40 +9,6 @@
 #include "bg_objects.h"
 
 
-int importManifestCriteria(ManifestRecord* rec, ManifestRecord* target)
-{
-	if (!target->assetName)
-		return 0;
-
-	// remove any leading paths
-	char* target_assetName = target->assetName;
-	for (char* t = target_assetName; t && *t; t++)
-		if (*t == '/' && *(t+1)!='\0')
-			target_assetName = t+1;
-
-	// find the last '.' or '\0' if there is none
-	char* ext = target_assetName + strlen(target_assetName);
-	for (char* t = target_assetName; t && *t; t++)
-		if (*t == '.')
-			ext = t;
-
-	// assetName is without path and without ext
-	char* target_assetNameWOExt = savestringn(target_assetName, ext-target_assetName);
-
-	// remove any leading paths
-	char* rec_pathWOFolders = rec->assetPath;
-	for (char* t = rec_pathWOFolders; t && *t; t++)
-		if (*t == '/' && *(t+1)!='\0')
-			rec_pathWOFolders = t+1;
-
-	int matched = 0;
-	if (bgstrncmp(rec->assetType, "lib.script.bash", 15)==0 && (bgstrcmp(rec->assetName,target_assetNameWOExt)==0 || bgstrcmp(rec->assetName,target_assetName)==0) )
-		matched = 1;
-	if (!matched && bgstrcmp(rec_pathWOFolders,target_assetName)==0 && (bgstrncmp(rec->assetType, "plugin", 15)==0 || bgstrncmp(rec->assetType, "unitTest", 15)==0))
-		matched = 1;
-	xfree(target_assetNameWOExt);
-	return matched;
-}
 
 int importBashLibrary(char* scriptName, int flags, char** retVar)
 {
@@ -70,14 +36,32 @@ int importBashLibrary(char* scriptName, int flags, char** retVar)
 
 	ManifestRecord foundManRec = {0};
 
-	// to test the inTerminal bgexit --complete bug, make this condition be false and
-	// bg-debugCntr vinstall <bg-coreSandbox> It will make import on a plugin fail and call assertError
-	//if (0 && scriptName && strchr(scriptName, '/')) {
-	if (scriptName && strchr(scriptName, '/')) {
-		if (!fsExists(scriptName)) {
-			bgtrace0(2,"resolved path does not exist. giving up\n");
+
+	ManifestRecord targetRec; ManifestRecord_makeImportCriteria(&targetRec, scriptName);
+	foundManRec = manifestGetOne(NULL, NULL, &targetRec, NULL);
+
+	// __bgtrace("!!! builtin import: \n");
+	// ManifestRecord_bgtrace(&targetRec, "!!! targetRec");
+	// ManifestRecord_bgtrace(&foundManRec, "!!! foundManRec");
+	//exit(1);
+
+	if (foundManRec.assetPath && !fsExists(foundManRec.assetPath)) {
+		xfree(lookupName);
+		ManifestRecord_cleanup(&foundManRec);
+		return assertError(NULL,"import: path found in manifest for '%s' does not exist. Ussually this means the hostmanifest file needs to be rebuilt.", scriptName);
+	}
+
+	if (!foundManRec.assetPath) {
+		if (!(flags&im_devOnlyFlag))
+			__bgtrace("import searching paths for '%s'\n",scriptName);
+
+		bgtrace0(2,"not found in manifest ... searching paths\n");
+		foundManRec.assetPath = findInLibPaths(scriptName);
+
+		if (!foundManRec.assetPath) {
+			bgtrace0(2,"not found searching paths either. giving up\n");
 			if (!(flags&im_quietFlag))
-				assertError(NULL,"import: resolved path does not exist. scriptName='%s'", scriptName);
+				assertError(NULL,"import: bash library not found in manifest nor in any system path. Default system path is '/usr/lib'. scriptName='%s'", scriptName);
 
 			xfree(lookupName);
 			ShellVar_set(vL1,"_importSetErrorCode");
@@ -86,39 +70,8 @@ int importBashLibrary(char* scriptName, int flags, char** retVar)
 			bgtrace1(2,"END importBashLibrary(%s)\n",scriptName);
 			return 202;
 		}
-
-		foundManRec.assetPath = savestring(scriptName);
-	} else {
-		ManifestRecord targetRec;
-		foundManRec = manifestGet(NULL, NULL, ManifestRecord_assign(&targetRec, NULL,NULL,scriptName,NULL), importManifestCriteria);
-
-		if (!foundManRec.assetPath) {
-			if (!(flags&im_devOnlyFlag))
-				__bgtrace("import searching paths for '%s'\n",scriptName);
-
-			bgtrace0(2,"not found in manifest ... searching paths\n");
-			foundManRec.assetPath = findInLibPaths(scriptName);
-
-			if (!foundManRec.assetPath) {
-				bgtrace0(2,"not found searching paths either. giving up\n");
-				if (!(flags&im_quietFlag))
-					assertError(NULL,"import: bash library not found in manifest nor in any system path. Default system path is '/usr/lib'. scriptName='%s'", scriptName);
-
-				xfree(lookupName);
-				ShellVar_set(vL1,"_importSetErrorCode");
-				ShellVar_set(vL2,"_importSetErrorCode");
-				bgtracePop();
-				bgtrace1(2,"END importBashLibrary(%s)\n",scriptName);
-				return 202;
-			}
-		} else {
-			if (!fsExists(foundManRec.assetPath)) {
-				xfree(lookupName);
-				ManifestRecord_free(&foundManRec);
-				return assertError(NULL,"import: path found in manifest for '%s' does not exist. Ussually this means the hostmanifest file needs to be rebuilt.", scriptName);
-			}
-		}
 	}
+
 
 	// if the caller passed in a var to receive the path, fill it in
 	if (retVar) {
@@ -126,7 +79,7 @@ int importBashLibrary(char* scriptName, int flags, char** retVar)
 
 		// if we are only asked to get the path, return
 		if (flags&im_getPathFlag) {
-			ManifestRecord_free(&foundManRec);
+			ManifestRecord_cleanup(&foundManRec);
 			xfree(lookupName);
 			bgtracePop(); bgtrace1(2,"END importBashLibrary(%s) (getPath only)\n",scriptName);
 			return 1;
@@ -161,14 +114,14 @@ int importBashLibrary(char* scriptName, int flags, char** retVar)
 		BGString_initFromStr(&pendingClassCtors, ShellVar_assocGet(ShellVar_find("Class"), "pendingClassCtors"));
 		BGString_replaceWhitespaceWithNulls(&pendingClassCtors);
 		char* pendingClass;
-		while ( (pendingClass = BGString_nextWord(&pendingClassCtors)) ) {
+		while ( (pendingClass = BGString_nextWord(&pendingClassCtors)) && *pendingClass ) {
 			DeclareClassEnd(pendingClass);
 		}
 		BGString_free(&pendingClassCtors);
 	}
 
 	dispose_words(args);
-	ManifestRecord_free(&foundManRec);
+	ManifestRecord_cleanup(&foundManRec);
 	xfree(lookupName);
 	bgtracePop(); bgtrace1(2,"END importBashLibrary(%s)\n",scriptName);
 	return ret;

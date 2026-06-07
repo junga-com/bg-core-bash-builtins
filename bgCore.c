@@ -4,7 +4,7 @@
 
 #include "bg_objects.h"
 
-#include <execute_cmd.h>
+//#include <execute_cmd.h>
 
 #include "bg_bashAPI.h"
 #include "bg_json.h"
@@ -286,39 +286,49 @@ int bgCore_builtin(WORD_LIST* list)
 		}
 
 
-		// bgCore manifestGet [-p|--pkg=<pkgMatch>] [-o|--output='$n'] <assetTypeMatch> <assetNameMatch>
+		// bgCore manifestGet [--manifest=<file>] [-p|--pkg=<pkgMatch>] [-o|--output='$n'] <assetTypeMatch> <assetNameMatch>
 		else if (strcmp("manifestGet", list->word->word)==0) {
 			list = list->next;
+			ManifestRecord criteriaRec; ManifestRecord_assign(&criteriaRec, NULL,NULL,NULL,NULL);
+
 			char* param = (list) ? list->word->word : NULL;
-			char* pkgMatch = NULL;
 			char* outputStr = "$0";
 			char* manifestFile = NULL;
 			while (param && *param == '-') {
 				param = (*(param+1)=='-') ? param+2 : param+1;
 				switch (*param) {
-				  case 'p': pkgMatch     = bgOptionGetOpt(&list); break;
-				  case 'o': outputStr    = bgOptionGetOpt(&list); break;
-				  case 'm': manifestFile = bgOptionGetOpt(&list); break;
+					case 'p': criteriaRec.pkgName = bgOptionGetOpt(&list); break;
+				  case 'o': outputStr      = bgOptionGetOpt(&list); break;
+				  case 'm': manifestFile   = bgOptionGetOpt(&list); break;
 				}
 				list = list->next;
 				param = (list) ? list->word->word : NULL;
 			}
-			ManifestRecord target; ManifestRecord_assign(&target, NULL,NULL,NULL,NULL);
-			target.pkgName = pkgMatch;
+
+			// <assetTypeMatch> arg
 			if (list) {
-				target.assetType = bgMakeAnchoredRegEx(list->word->word);
+				criteriaRec.assetType = bgMakeAnchoredRegEx(list->word->word);
 				list = list->next;
 			}
+
+			// <assetNameMatch> arg
 			if (list) {
-				target.assetName = bgMakeAnchoredRegEx(list->word->word);
+				criteriaRec.assetName = bgMakeAnchoredRegEx(list->word->word);
 				list = list->next;
 			}
 
 			// when outputStr is not null, it will print results to stdout
-			ManifestRecord foundManRec = manifestGet(manifestFile, outputStr, &target, NULL);
-			ManifestRecord_free(&foundManRec);
-			if (target.assetType) xfree(target.assetType);
-			if (target.assetName) xfree(target.assetName);
+			ManifestRecord* pMatchingRecs = manifestGetC(manifestFile, outputStr, &criteriaRec, NULL);
+
+			for (ManifestRecord* pR=pMatchingRecs; !ManifestRecord_isEmpty(pR); pR++) {
+				char* pOut = ManifestRecord_expandTemplate(pR, outputStr);
+				printf("%s\n", pOut);
+				xfree(pOut);
+			}
+
+			ManifestRecord_arrayFree(pMatchingRecs);
+			if (criteriaRec.assetType) xfree(criteriaRec.assetType);
+			if (criteriaRec.assetName) xfree(criteriaRec.assetName);
 
 			ret = EXECUTION_SUCCESS;
 		}

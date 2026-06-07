@@ -10,7 +10,6 @@
 #define im_getPathFlag     0x08
 #define im_devOnlyFlag     0x10
 
-extern int importManifestCriteria(ManifestRecord* rec, ManifestRecord* target);
 extern int importBashLibrary(char* scriptName, int flags, char** retVar);
 extern char* findInLibPaths(char* scriptName);
 

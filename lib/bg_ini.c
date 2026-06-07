@@ -713,7 +713,7 @@ char* iniParamGetC(IniScheme* pScheme, char* iniFilenameSpec, char* targetSectio
 		iniFilenameList,
 		NULL,         // no BGRetVar means to return a WORD_LIST*
 		NULL,         // no prefix to remove
-		ef_filesOnly, // flags (ef_force,ef_recurse,ef_filesOnly,ef_foldersOnly)
+		ef_filesOnly|ef_force, // flags (ef_force,ef_recurse,ef_filesOnly,ef_foldersOnly)
 		NULL,         // no findOpts
 		NULL,         // no global find expressions
 		NULL,         // no find expressions

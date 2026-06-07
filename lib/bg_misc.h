@@ -4,11 +4,19 @@
 
 #include <stdio.h>
 
+// for safeSaveString
+#include <stddef.h>
+#include <string.h>
+void *xmalloc(size_t);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Misc Functions
 
 extern int isNumber(char* string);
+
+// since its not a macro it wont evaluate x more than once
+// x can be null
+static inline char *safeSaveString(char *x) { x=x?x:""; return strcpy(xmalloc(strlen(x) + 1), x); }
 
 extern char* savestringn(char* x, int n);
 extern char* save2string(char* s1, char* s2);
@@ -45,5 +53,10 @@ extern int   fsExists(const char* file);
 extern void  fsCopy(const char* src, const char* dst, int flags);
 
 extern char* mktempC(char* template);
+
+// s is a writable null terminated string. Each call writes a null at the first whitespace position
+// so that the s becomes shortenned and returns the the char* of the first non whitespace position after
+// that position or the terminating null if there is no more text. If s points to null it return NULL
+extern char* strConsumeNext(char* s);
 
 #endif /* _bg_misc_H_ */
