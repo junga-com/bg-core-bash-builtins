@@ -122,7 +122,9 @@ int BashObjRef_init(BashObjRef* pRef, char* objRefStr)
 	while (*pe && !whitespace(*pe)) pe++;
 	if ((pe-ps) > sizeof(pRef->oid)-1)
 		return 0; // assertError(NULL,"BashObjRef_init: oid name is too large (>%d)\n\tobjRef='%s'\n", sizeof(pRef->oid)-1, objRefStr);
-	strncpy(pRef->oid, ps, pe-ps); pRef->oid[pe-ps]='\0';
+	if (pe-ps)
+		strncpy(pRef->oid, ps, pe-ps);
+	pRef->oid[pe-ps]='\0';
 	while (pe && *pe && whitespace(*pe)) pe++;
 
 	// ps should be pointing at the start of <className> now

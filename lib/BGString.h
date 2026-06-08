@@ -21,7 +21,7 @@ typedef struct {
 } BGString;
 
 extern void BGString_init(BGString* pStr, int allocatedLen);
-extern void BGString_initFromStr(BGString* pStr, char* s);
+extern void BGString_initFromStr(BGString* pStr, const char* s);
 extern void BGString_initFromAllocatedStr(BGString* pStr, char* s);
 extern void BGString_free(BGString* pStr);
 

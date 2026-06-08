@@ -8,11 +8,33 @@
 
 #include <sys/types.h>
 #include <unistd.h>
+#include <signal.h>
+#include <string.h>
+#include <strings.h>
 
 #include "bg_bashAPI.h"
 
 FILE* _bgtraceFD=NULL;
 int bgtraceIndentLevel=0;
+
+
+
+static void bg_segv_handler(int sig)
+{
+	void *frames[64];
+	int n;
+
+	int outFD = _bgtraceFD ? fileno(_bgtraceFD) : STDERR_FILENO;
+
+	const char msg[] = "\nBG builtin caught SIGSEGV; stack trace follows:\n";
+	(void)!write(outFD, msg, sizeof(msg)-1);
+
+	n = backtrace(frames, 64);
+	backtrace_symbols_fd(frames, n, outFD);
+
+	signal(sig, SIG_DFL);
+	raise(sig);
+}
 
 void bgtraceOn()
 {
@@ -33,6 +55,16 @@ void bgtraceOn()
 		else
 			bgtrace0(0, "BASH bgCore trace started\n");
 	}
+
+	// install a segfault handler to bgtrace a stack trace
+	const char* inhibitFlag = getenv("bgInhibitDebugSegHandling");
+	if (!inhibitFlag ||strcasecmp(inhibitFlag,"yes")!=0) {
+		struct sigaction sa = {0};
+		sa.sa_handler = bg_segv_handler;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = SA_RESETHAND | SA_NODEFER;
+		sigaction(SIGSEGV, &sa, NULL);
+	}
 }
 
 extern pid_t dollar_dollar_pid;
@@ -51,6 +83,8 @@ int _bgtrace(int level, char* fmt, ...)
 
 int __bgtrace(char* fmt, ...)
 {
+	if (_bgtraceFD == NULL)
+		return 0;
 	va_list args;
 	SH_VA_START (args, fmt);
 	vfprintf(_bgtraceFD, fmt, args);

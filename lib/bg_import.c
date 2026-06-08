@@ -53,7 +53,7 @@ int importBashLibrary(char* scriptName, int flags, char** retVar)
 
 	if (!foundManRec.assetPath) {
 		if (!(flags&im_devOnlyFlag))
-			__bgtrace("import searching paths for '%s'\n",scriptName);
+			__bgtrace("import: Not found in manifest. Falling back on searching paths for '%s'\n",scriptName);
 
 		bgtrace0(2,"not found in manifest ... searching paths\n");
 		foundManRec.assetPath = findInLibPaths(scriptName);

@@ -62,6 +62,7 @@ void callFrames_pop()
 
 	CallFrame* pFrm = &(callFrames[--callFramesPos]);
 	discard_unwind_frame(pFrm->name);
+	// commented out for a susspected bug where run_unwind_frame already frees it
 	xfree(pFrm->name);
 }
 
@@ -69,8 +70,13 @@ void callFrames_longjump(int exitCode)
 {
 	if (callFramesPos > 0) {
 
-		CallFrame* pFrm = &(callFrames[--callFramesPos]);
-		run_unwind_frame(pFrm->name);
+		CallFrame* pFrm = &(callFrames[callFramesPos-1]);
+		char* frameName = pFrm->name;
+		callFramesPos--;
+
+		run_unwind_frame(frameName);
+
+		// commented out for a susspected bug where run_unwind_frame already frees it
 		xfree(pFrm->name);
 
 		longjmp(pFrm->jmpBuf, exitCode);

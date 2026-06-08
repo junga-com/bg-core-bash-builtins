@@ -14,8 +14,9 @@ void BGString_init(BGString* pStr, int allocatedLen)
 	pStr->lineEnd = "\n";
 	pStr->sep = ",";
 }
-void BGString_initFromStr(BGString* pStr, char* s)
+void BGString_initFromStr(BGString* pStr, const char* s)
 {
+	s = s ? s : "";
 	pStr->len=bgstrlen(s);
 	pStr->allocatedLen=pStr->len+1;
 	pStr->buf=xmalloc(pStr->allocatedLen);
