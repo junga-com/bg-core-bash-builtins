@@ -55,6 +55,6 @@ in a bash startup file (e.g. /etc/bash.bashrc) to include /usr/lib/bin/ if it do
 You can use the bg-dev command from the bg-dev package to create a package for this project.
 run ...
    <projRoot>$ sudo apt install bg-dev
-   <projRoot>$ bg-dev buildPkg [deb|rpm]
+   <projRoot>$ bg-dev pkgBuild [deb|rpm]
 
 The package file will be placed in the project root folder
