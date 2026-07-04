@@ -4,11 +4,17 @@
 
 #include "bg_objects.h"
 
-typedef struct ObjRestoreMap {
-	char* oldOID;
-	char* newOID;
-	struct ObjRestoreMap* next;
-} ObjRestoreMap;
+typedef struct ObjOIDMapEntry {
+	char* fromOID;
+	char* toOID;
+	struct ObjOIDMapEntry* next;
+} ObjOIDMapEntry;
+
+typedef struct {
+	ObjOIDMapEntry* head;
+	int count;
+} ObjOIDMap;
+
 
 typedef enum {
 	jt_object,
@@ -41,7 +47,7 @@ typedef struct {
 	char* pos;
 	char* end;
 	char* filename;
-	ObjRestoreMap* objDictionary;
+	ObjOIDMap objDictionary;
 } JSONScanner;
 
 
@@ -51,14 +57,14 @@ extern char* jsonEscape(char* s);
 extern void jsonUnescape(char* s);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// ObjRestoreMap
+// ObjOIDMap
 
-extern void ObjRestoreMap_init(ObjRestoreMap** ppMap);
-extern void ObjRestoreMap_destroy(ObjRestoreMap** ppMap);
-extern void ObjRestoreMap_put(ObjRestoreMap** ppMap,
+extern void ObjOIDMap_init(ObjOIDMap* ppMap);
+extern void ObjOIDMap_destroy(ObjOIDMap* ppMap);
+extern void ObjOIDMap_put(ObjOIDMap* ppMap,
                        const char* oldOID,
                        const char* newOID);
-extern const char* ObjRestoreMap_get(ObjRestoreMap* map,
+extern const char* ObjOIDMap_get(ObjOIDMap* map,
                               const char* oldOID);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -95,7 +101,7 @@ extern JSONToken* JSONScanner_getObject(JSONScanner* this, BashObj* pObj);
 extern JSONToken* JSONScanner_getValue(JSONScanner* this);
 
 #define JSONScanner_free(this) do { \
-	ObjRestoreMap_destroy(&this->objDictionary); \
+	ObjOIDMap_destroy(&this->objDictionary); \
 	xfree(this->buf); \
 	xfree(this); \
 	this=NULL; \

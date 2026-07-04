@@ -60,56 +60,66 @@ void jsonUnescape(char* s)
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// ObjRestoreMap
+// ObjOIDMap
 
-void ObjRestoreMap_init(ObjRestoreMap** ppMap)
+void ObjOIDMap_init(ObjOIDMap* map)
 {
-	*ppMap = NULL;
+	map->head = NULL;
+	map->count = 0;
 }
 
-void ObjRestoreMap_destroy(ObjRestoreMap** ppMap)
+void ObjOIDMap_destroy(ObjOIDMap* map)
 {
-	while (*ppMap) {
-		ObjRestoreMap* p = *ppMap;
-		*ppMap = p->next;
+	ObjOIDMapEntry* p = map->head;
 
-		free(p->oldOID);
-		free(p->newOID);
+	while (p) {
+		ObjOIDMapEntry* next = p->next;
+
+		free(p->fromOID);
+		free(p->toOID);
 		free(p);
+
+		p = next;
 	}
+
+	map->head = NULL;
+	map->count = 0;
 }
 
-void ObjRestoreMap_put(ObjRestoreMap** ppMap, const char* oldOID, const char* newOID)
+void ObjOIDMap_put(ObjOIDMap* map, const char* fromOID, const char* toOID)
 {
-	ObjRestoreMap* p;
+	ObjOIDMapEntry* p;
 
 	/* Replace an existing entry */
-	for (p=*ppMap; p; p=p->next) {
-		if (strcmp(p->oldOID, oldOID) == 0) {
-			free(p->newOID);
-			p->newOID = savestring(newOID);
+	for (p = map->head; p; p = p->next) {
+		if (strcmp(p->fromOID, fromOID) == 0) {
+			free(p->toOID);
+			p->toOID = savestring(toOID);
 			return;
 		}
 	}
 
 	/* Insert new entry */
 	p = xmalloc(sizeof(*p));
-	p->oldOID = savestring(oldOID);
-	p->newOID = savestring(newOID);
+	p->fromOID = savestring(fromOID);
+	p->toOID = savestring(toOID);
 
-	p->next = *ppMap;
-	*ppMap = p;
+	p->next = map->head;
+	map->head = p;
+	map->count++;
 }
 
-const char* ObjRestoreMap_get(ObjRestoreMap* map, const char* oldOID)
+const char* ObjOIDMap_get(ObjOIDMap* map, const char* fromOID)
 {
-	for (; map; map=map->next)
-		if (strcmp(map->oldOID, oldOID) == 0)
-			return map->newOID;
+	ObjOIDMapEntry* p;
+
+	for (p = map->head; p; p = p->next) {
+		if (strcmp(p->fromOID, fromOID) == 0)
+			return p->toOID;
+	}
 
 	return NULL;
 }
-
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -315,7 +325,7 @@ JSONScanner* JSONScanner_newFromFile(char* inFile)
 	// advance over leading whitespace to the real start of data
 	while (spctabnl(*this->pos) && this->pos<this->end) this->pos++;
 
-	ObjRestoreMap_init(&this->objDictionary);
+	ObjOIDMap_init(&this->objDictionary);
 
 	return this;
 }
@@ -353,7 +363,7 @@ JSONScanner* JSONScanner_newFromStream(int fdJSON)
 	this->end = this->buf+this->length;
 	*this->end = '\0';
 
-	ObjRestoreMap_init(&this->objDictionary);
+	ObjOIDMap_init(&this->objDictionary);
 
 	return this;
 }
@@ -364,7 +374,7 @@ char* JSONScanner_fixupObjRef(JSONScanner* this, char* value)
 	if (!BashObjRef_init(&objRef, value))
 		return NULL;
 
-	const char* restoredOID = ObjRestoreMap_get(this->objDictionary, objRef.oid);
+	const char* restoredOID = ObjOIDMap_get(&this->objDictionary, objRef.oid);
 	if (!restoredOID)
 		return NULL;
 
@@ -476,7 +486,7 @@ JSONToken* JSONScanner_getObject(JSONScanner* this, BashObj* pObj)
 
 		// check for some special bash object system variables for special processing
 		if (strcmp(name->value,"_OID")==0) {
-			ObjRestoreMap_put(&this->objDictionary,
+			ObjOIDMap_put(&this->objDictionary,
 												value->value,
 			                  pObj->vThis->name);
 
