@@ -4,8 +4,10 @@
 #include <regex.h>
 #include <execute_cmd.h>
 
+#include "bg_misc.h"
 #include "BGString.h"
 #include "bg_import.h"
+
 
 
 void assertObjExpressionError(WORD_LIST* opts, char* fmt, ...)
@@ -107,7 +109,7 @@ char* extractOID(char* objRef)
 	return savestringn(oid, (oidEnd-oid));
 }
 
-// '_bgclassCall <oid> <className> <hierarchyLevel> | '
+// 'usage: BashObjRef_init _bgclassCall <oid> <className> <hierarchyLevel> | '
 int BashObjRef_init(BashObjRef* pRef, char* objRefStr)
 {
 	// skip over the '_bgclassCall' token
@@ -196,11 +198,12 @@ void BashObj_makeRef(BashObj* pObj)
 {
 	// '_bgclassCall <oid> <class> 0 | '
 	//  12  + 8 + 1 + strlen(<oid>) + strlen(<class>)
-	strcpy(pObj->ref,"_bgclassCall ");
-	strcat(pObj->ref,pObj->vThis->name);
-	strcat(pObj->ref," ");
-	strcat(pObj->ref,pObj->vCLASS->name);
-	strcat(pObj->ref," 0 |");
+	bg_snprintf(
+		pObj->ref,
+		"_bgclassCall %s %s 0 |",
+		pObj->vThis->name,
+		pObj->vCLASS->name
+	);
 }
 
 void BashObj_makeVMT(BashObj* pObj)
@@ -241,7 +244,7 @@ int BashObj_init(BashObj* pObj, char* name, char* refClass, char* hierarchyLevel
 	int errFlag=0;
 
 	if (bgstrlen(refClass) >199) assertError(NULL,"BashObj_init: refClass is too long (>200)\nrefClass='%s'\n", refClass);
-	strcpy(pObj->refClass, refClass?refClass:(name?name:""));
+	bg_snprintf(pObj->refClass, "%s", refClass ? refClass : (name ? name : ""));
 	pObj->superCallFlag = (hierarchyLevel && strcmp(hierarchyLevel, "0")!=0);
 
 	pObj->vThis=ShellVar_find(name);
@@ -259,7 +262,7 @@ int BashObj_init(BashObj* pObj, char* name, char* refClass, char* hierarchyLevel
 	// in with the object members but we can tell them apart because system vars must begin with an '_'.  [0] can also be a system
 	// var but it is special because its functionality depends on putting it in the pThis array. The class attribute [defaultIndex]
 	// determines if pThis[0] is a system var or a memberVar
-	strcpy(pObj->name,pObj->vThis->name); strcat(pObj->name,"_sys");
+	bg_snprintf(pObj->name, "%s_sys", pObj->vThis->name);
 	pObj->vThisSys=ShellVar_find(pObj->name);
 	if (!pObj->vThisSys)
 		pObj->vThisSys=pObj->vThis;
@@ -277,7 +280,7 @@ int BashObj_init(BashObj* pObj, char* name, char* refClass, char* hierarchyLevel
 		assertError(NULL,"BashObj_init: _VMT (virtual method table) is missing.\n\tobj='%s'\n\tclass='%s'\n\trefClass='%s'\n\tsuperCallFlag='%d'\n", name, _CLASS, pObj->refClass,pObj->superCallFlag);
 
 	// we used pObj->name as a buffer to try lookups for several different names but now lets put the actual name in it
-	strcpy(pObj->name, pObj->vThis->name);
+	bg_snprintf(pObj->name, "%s", pObj->vThis->name);
 
 	pObj->namerefMembers = NULL;
 
@@ -295,12 +298,13 @@ int BashObj_initFromContext(BashObj* pObj)
 	pObj->vVMT = ShellVar_find("_VMT");
 
 	pObj->superCallFlag = atol(ShellVar_getS("_hierarchLevel"));
-	strncpy(pObj->ref , ShellVar_assocGet(pObj->vThisSys, "_Ref"), sizeof(pObj->ref)-1);
-	strncpy(pObj->name, pObj->vThis->name                        , sizeof(pObj->name)-1);
+
+	bg_snprintf(pObj->ref, "%s", bgstr(ShellVar_assocGet(pObj->vThisSys, "_Ref")));
+	bg_snprintf(pObj->name, "%s", bgstr(pObj->vThis->name));
 
 	char* refClass = ShellVar_getS("_CLASS");
 	if (bgstrlen(refClass) >199) assertError(NULL,"BashObj_init: refClass is too long (>200)\nrefClass='%s'\n", refClass);
-	strcpy(pObj->refClass, refClass?refClass:pObj->name);
+	bg_snprintf(pObj->refClass, "%s", refClass ? refClass : pObj->name);
 
 	pObj->namerefMembers = NULL;
 	return EXECUTION_SUCCESS;
@@ -358,14 +362,16 @@ void BashObj_setupMethodCallContextDone(BashObj* this)
 BashObj* BashObj_copy(BashObj* that)
 {
 	BashObj* this = xmalloc(sizeof(BashObj));
-	strcpy(this->name, that->name );
-	strcpy(this->ref , that->ref  );
+
+	bg_snprintf(this->name, "%s", that->name);
+	bg_snprintf(this->ref, "%s", that->ref);
+
 	this->vThis   = that->vThis     ;
 	this->vThisSys= that->vThisSys  ;
 	this->vCLASS  = that->vCLASS    ;
 	this->vVMT    = that->vVMT      ;
 
-	strcpy(this->refClass, that->refClass);
+	bg_snprintf(this->refClass, "%s", that->refClass);
 
 	this->superCallFlag = that->superCallFlag;
 	this->namerefMembers = NULL;
@@ -500,7 +506,7 @@ BashObj* ConstructObject(WORD_LIST* args)
 	// The first time _bgclassCall is invoked with that objRef, it will call us with the OID of the ref to create it
 	if (!vObjVar && !valid_array_reference(_objRefVar,VA_NOEXPAND)  && strncasecmp(_objRefVar, "heap_a", 6)==0) {
 		bgtrace1(1,"objVar:(%s) non-existent heap var\n", _objRefVar);
-		strcpy(newObj->name, _objRefVar);
+		bg_snprintf(newObj->name, "%s", _objRefVar);
 		if (isNumericArray)
 			newObj->vThis = ShellVar_arrayCreateGlobal(_objRefVar);
 		else
@@ -537,7 +543,7 @@ BashObj* ConstructObject(WORD_LIST* args)
 	// Note that this case is problematic and maybe should assert an error because there is no way to create the _sys array in the
 	// same scope that the caller created the OID array. We create a "${_OID}_sys" global array but that polutes the global namespace
 	// and can collide with other object instances.
-	} else if (vObjVar && assoc_p(vObjVar)) {
+	} else if (vObjVar && array_p(vObjVar)) {
 		bgtrace1(1,"objVar:(%s) its an 'a' (numeric) array\n", _objRefVar);
 		newObj->vThis = vObjVar;
 
@@ -569,7 +575,7 @@ BashObj* ConstructObject(WORD_LIST* args)
 		}
 	}
 
-	strcpy(newObj->name, newObj->vThis->name);
+	bg_snprintf(newObj->name, "%s", newObj->vThis->name);
 
 	ShellVar_assocSet(newObj->vThisSys, "_OID"  , newObj->vThis->name);
 	ShellVar_assocSet(newObj->vThisSys, "_CLASS", newObj->vCLASS->name);
@@ -687,13 +693,24 @@ char* BashObj_getMemberValue(BashObj* pObj, char* memberName)
 
 int BashObj_setMemberValue(BashObj* pObj, char* memberName, char* value)
 {
-	if (*memberName == '_'){
-		assoc_insert (assoc_cell (pObj->vThisSys), savestring(memberName), value);
-	}else if (array_p(pObj->vThis)) {
+	if (strcmp(memberName, "_CLASS") == 0) {
+	    BashObj_setClass(pObj, value);
+
+	} else if (
+		strcmp(memberName, "_OID") == 0 ||
+		strcmp(memberName, "_Ref") == 0 ||
+		strcmp(memberName, "0") == 0) {
+			assertError(NULL, "'%s' is read-only", memberName);
+
+	} else if (*memberName == '_'){
+		ShellVar_assocSet(pObj->vThisSys, memberName, value);
+
+	} else if (array_p(pObj->vThis)) {
 		arrayind_t index = ShellVar_arrayStrToIndex(pObj->vThis, memberName);
 		ShellVar_arraySetI(pObj->vThis, index, value);
-	}else {
-		assoc_insert (assoc_cell (pObj->vThis),    savestring(memberName), value);
+
+	} else {
+		ShellVar_assocSet(pObj->vThis, memberName, value);
 	}
 	return EXECUTION_SUCCESS;
 }
@@ -724,12 +741,38 @@ void BashObj_setClass(BashObj* pObj, char* newClassName)
 	if (!vNewClass)
 		return;
 
+	if (ShellVar_assocGet(pObj->vThisSys, "_VMT")) {
+		assertError(NULL,
+			"Can not set the Class on an object instance that has a _VMT member");
+	}
+
+	char *oldClassName = pObj->vCLASS->name;
+
+	char* classTblLookup = save3string(newClassName, ",", oldClassName);
+	if (!ShellVar_assocGetS("_classIsAMap", classTblLookup)) {
+		xfree(classTblLookup);
+		assertError(NULL,
+			"Can not set class to one that is not a descendant to the original class\n"
+			"\toriginalClass='%s'\n"
+			"\tnewClass='%s'",
+			oldClassName, newClassName);
+	}
+	xfree(classTblLookup);
+
+	// now that we are past the potential derive check assertError, copy the oldClassName so that we can use it even if changes
+	oldClassName = savestring(oldClassName);
+
 	pObj->vCLASS = vNewClass;
+
+	bg_snprintf(pObj->refClass, "%s", newClassName);
+
 	BashObj_makeRef(pObj);
 
-	assoc_insert (assoc_cell(pObj->vThisSys), savestring("_CLASS"), vNewClass->name);
-	assoc_insert (assoc_cell(pObj->vThisSys), savestring("_Ref"), pObj->ref);
-	assoc_insert (assoc_cell(pObj->vThisSys), savestring("0"), pObj->ref);
+
+	ShellVar_assocSet(pObj->vThisSys, "_CLASS", vNewClass->name);
+	ShellVar_assocSet(pObj->vThisSys, "_Ref",   pObj->ref);
+	ShellVar_assocSet(pObj->vThisSys, "0",      pObj->ref);
+
 	char* defIdxSetting = ShellVar_assocGet(pObj->vCLASS, "defaultIndex");
 	if (!defIdxSetting || strcmp(defIdxSetting,"off")!=0)
 		ShellVar_assocSet(pObj->vThis, "0", pObj->ref);
@@ -737,13 +780,30 @@ void BashObj_setClass(BashObj* pObj, char* newClassName)
 		assoc_remove( assoc_cell(pObj->vThis), "0" );
 
 	_classUpdateVMT(newClassName, 0);
+	BashObj_makeVMT(pObj);
 
 	// # invoke the _onClassSet methods that exist for any Class in this hierarchy
-	// local -n static="$_CLASS"
-	// local -n _VMT="${_this[_VMT]:-${_this[_CLASS]}_vmt}"
-	// local _cname; for _cname in ${class[classHierarchy]}; do
-	// 	type -t $_cname::_onClassSet &>/dev/null && $_cname::_onClassSet "$@"
-	// done
+	char* hierarchy = ShellVar_assocGet(vNewClass, "classHierarchy");
+	if (!hierarchy)
+		assertError(NULL, "Class '%s' has no classHierarchy", newClassName);
+	WORD_LIST* hierarchyList = WordList_fromString(hierarchy, " ", 0);
+
+	for (WORD_LIST* it = hierarchyList; it; it = it->next) {
+		char* funcName = save3string(it->word->word, "::", "_onClassSet");
+		SHELL_VAR* func = ShellFunc_find(funcName);
+		if (func) {
+			BashObj_setupMethodCallContext(pObj, sm_thisAndFriends, funcName);
+
+			WORD_LIST *args = make_word_list(make_word(savestring(oldClassName)),NULL);
+			ShellFunc_execute(func, args);
+			dispose_words(args);
+
+			BashObj_setupMethodCallContextDone(pObj);
+		}
+		xfree(funcName);
+	}
+	xfree(oldClassName);
+	WordList_free(hierarchyList);
 }
 
 
@@ -756,7 +816,7 @@ char* BashObj_getMethod(BashObj* pObj, char* methodName)
 			assertError(NULL,"BashObj_getMethod: methodName is too long (>200). \n\tmethodName='%s'\n", methodName);
 			return NULL;
 		}
-		char buf[255]; strcpy(buf, "_method::"); strcat(buf,methodName);
+		char buf[255]; bg_snprintf(buf, "_method::%s", bgstr(methodName));
 		return ShellVar_assocGet(pObj->vVMT, buf);
 	}
 }
@@ -1011,7 +1071,6 @@ int _classUpdateVMT(char* className, int forceFlag)
 	if (!className || !*className)
 		return EXECUTION_FAILURE;
 
-	int classNameLen=strlen(className);
 	BashClass class; BashClass_init(&class,className);
 
 	// # forceFlag will reset the vmtCacheNum of this entire class hierarchy so that the algorithm will rescan them all during this run
@@ -1071,8 +1130,8 @@ int _classUpdateVMT(char* className, int forceFlag)
 		// # add the methods of this class
 		// functions that start with <className>:: or static::<className>::
 		SHELL_VAR **funcList = all_visible_functions();
-		char* prefix1=xmalloc(classNameLen+3);  strcpy(prefix1, className);  strcat(prefix1, "::");                             int prefix1Len=strlen(prefix1);
-		char* prefix2=xmalloc(classNameLen+11); strcpy(prefix2, "static::"); strcat(prefix2, className); strcat(prefix2, "::"); int prefix2Len=strlen(prefix2);
+		char* prefix1=save2string(className, "::");             int prefix1Len=strlen(prefix1);
+		char* prefix2=save3string("static::", className, "::"); int prefix2Len=strlen(prefix2);
 
 		BGString methodsStrList;       BGString_init(&methodsStrList,       1024);
 		BGString staticMethodsStrList; BGString_init(&staticMethodsStrList, 1024);
@@ -1082,18 +1141,14 @@ int _classUpdateVMT(char* className, int forceFlag)
 			total++;
 			if (strncmp(funcList[i]->name, prefix1,prefix1Len)==0) {
 				count++;
-				char* methodBase=xmalloc(strlen(funcList[i]->name)+7+1);
-				strcpy(methodBase, "_method");
-				strcat(methodBase, funcList[i]->name+prefix1Len-2);
+				char* methodBase=save2string("_method", funcList[i]->name+prefix1Len-2);
 				ShellVar_assocSet(class.vVMT, methodBase, funcList[i]->name);
 				BGString_append(&methodsStrList, "\n", funcList[i]->name);
 				xfree(methodBase);
 			}
 			if (strncmp(funcList[i]->name, prefix2,prefix2Len)==0) {
 				count++;
-				char* staticBase=xmalloc(strlen(funcList[i]->name)+7+1);
-				strcpy(staticBase, "_static");
-				strcat(staticBase, funcList[i]->name+prefix2Len-2);
+				char *staticBase = save2string("_static", funcList[i]->name + prefix2Len - 2);
 				ShellVar_assocSet(class.vVMT, staticBase, funcList[i]->name);
 				BGString_append(&staticMethodsStrList, "\n", funcList[i]->name);
 				xfree(staticBase);
@@ -1349,7 +1404,7 @@ int _bgclassCall(WORD_LIST* list)
 			   strcmp(_memberOp, "=new")==0
 			|| strcmp(_memberOp, "+="  )==0
 			|| strcmp(_memberOp, "="   )==0
-			|| strcmp(_memberOp, "::"  )
+			|| strcmp(_memberOp, "::"  )==0
 		);
 
 	// This block process the part of the expression that is before the recognized operator to figure out
@@ -1409,7 +1464,6 @@ int _bgclassCall(WORD_LIST* list)
 
 	// the loop iterated all but the last part and objInstance is now the object for which the last part is a member of
 	_rsvMemberName=savestring(pCurPart);
-	add_unwind_protect(xfree,_rsvMemberName);
 	*_chainedObjOrMemberEnd=saveCh;
 
 	// if its empty
@@ -1457,7 +1511,6 @@ int _bgclassCall(WORD_LIST* list)
 	}
 
 	char* _rsvMemberTypeStr = MemberTypeToString(_rsvMemberType, NULL, _rsvMemberValue);
-	add_unwind_protect(xfree,_rsvMemberTypeStr);
 
 	bgtrace1(2,"   _memberOp        ='%s'\n", (_memberOp)?_memberOp:"");
 	bgtrace1(2,"   _rsvMemberType   ='%s'\n", (_rsvMemberTypeStr)?_rsvMemberTypeStr:"");
@@ -1494,10 +1547,8 @@ int _bgclassCall(WORD_LIST* list)
 		// _rsvMemberName="${_rsvMemberName}::$1"
 		char* t=_rsvMemberName;
 		char* d1 = get_dollar_var_value(1);
-		_rsvMemberName = xmalloc(strlen(t)+strlen(d1)+3);
-		strcpy(_rsvMemberName,t);
-		strcat(_rsvMemberName, "::");
-		strcat(_rsvMemberName, d1);
+		_rsvMemberName = save3string(t, "::", d1);
+		xfree(d1);
 		xfree(t);
 
 		// shift  -- we know in this case that $1 came from the expression and had to be insterted into vArgs and dollar so list
@@ -1509,6 +1560,12 @@ int _bgclassCall(WORD_LIST* list)
 		_rsvMemberTypeStr = MemberTypeToString(_rsvMemberType, NULL, _rsvMemberValue);
 		xfree(_memberOp); _memberOp=savestring("");
 	}
+
+	// now that we are past the :: override block, these two variables are final and we can protect them.
+	// we live with the risk that they could leak if something between their allocation and here longjumps
+	// because its a pain to change pointers after they have been unwind protected
+	add_unwind_protect(xfree,_rsvMemberName);
+	add_unwind_protect(xfree,_rsvMemberTypeStr);
 
 	ObjExprOperators memberOp = ObjExprOpFromString(_memberOp);
 
@@ -1542,7 +1599,7 @@ int _bgclassCall(WORD_LIST* list)
 		break;
 
 		case CA(eo_defaultOp,mt_primitive) :
-			value = ShellVar_assocGet(objInstance.vThis, _rsvMemberName);
+			value = BashObj_getMemberValue(&objInstance, _rsvMemberName);
 			BGRetVar_initFromVarname(&retVar, (methodArgs) ? methodArgs->word->word : "");
 			outputValue(&retVar, value);
 		break;

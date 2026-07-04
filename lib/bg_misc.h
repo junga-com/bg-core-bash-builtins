@@ -37,7 +37,14 @@ extern char* saprintf(char* fmt, ...);
 #define bgstrncmp(s1,s2,len)   ((!s1)?-1: (!s2)?1: strncmp(s1,s2,len))
 #define bgstrlen(s)            ((!s)?0:strlen(s))
 
-#define bgstr(s)              ( (s) ?s :"" )
+#define bgstr(s)              ( (s) ?(s) :"" )
+
+#define bg_snprintf(dst, fmt, ...)                                      \
+	do {                                                             \
+		int _bg_n = snprintf((dst), sizeof(dst), (fmt), ##__VA_ARGS__); \
+		if (_bg_n < 0 || (size_t)_bg_n >= sizeof(dst))               \
+			assertError(NULL, "buffer overflow writing %s", #dst);   \
+	} while (0)
 
 extern char* bgstrpbrk(char* s, char* delims);
 
