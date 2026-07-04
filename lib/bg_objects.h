@@ -84,7 +84,7 @@ extern ObjExprOperators ObjExprOpFromString(char* s);
 
 extern char* extractOID(char* objRef);
 extern int BashObjRef_init(BashObjRef* pRef, char* objRefStr);
-
+extern char* BashObjRef_saveString(const BashObjRef *pRef);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // BashObj

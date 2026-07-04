@@ -149,6 +149,14 @@ int BashObjRef_init(BashObjRef* pRef, char* objRefStr)
 	return 1;
 }
 
+// syntax:  '_bgclassCall <oid> <className> <hierarchyLevel> | '
+char* BashObjRef_saveString(const BashObjRef *pRef) {
+	char superCallFlagStr[32];
+	snprintf(superCallFlagStr, sizeof(superCallFlagStr), "%d", pRef->superCallFlag);
+
+	return bg_savestring("_bgclassCall ", pRef->oid," ", pRef->className," ", superCallFlagStr, " | ");
+}
+
 
 SHELL_VAR* assertClassExists(char* className, int* pErr)
 {

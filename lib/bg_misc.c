@@ -73,6 +73,34 @@ char* save4string(char* s1, char* s2, char* s3, char* s4)
 	return p;
 }
 
+char* saveNstring(const char *s1, ...)
+{
+    va_list ap;
+    const char *s;
+    size_t len = 0;
+
+    /* First pass: compute total length */
+    va_start(ap, s1);
+    for (s = s1; s; s = va_arg(ap, const char *))
+        len += strlen(s);
+    va_end(ap);
+
+    char *result = xmalloc(len + 1);
+    char *p = result;
+
+    /* Second pass: copy strings */
+    va_start(ap, s1);
+    for (s = s1; s; s = va_arg(ap, const char *)) {
+        size_t n = strlen(s);
+        memcpy(p, s, n);
+        p += n;
+    }
+    va_end(ap);
+
+    *p = '\0';
+    return result;
+}
+
 char* resaveWithQuotes(char* s1, int reallocFlag)
 {
 	int s1Len = strlen(s1);

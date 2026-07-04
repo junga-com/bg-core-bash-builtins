@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 // for safeSaveString
+#include <stdarg.h>
 #include <stddef.h>
 #include <string.h>
 void *xmalloc(size_t);
@@ -22,6 +23,10 @@ extern char* savestringn(char* x, int n);
 extern char* save2string(char* s1, char* s2);
 extern char* save3string(char* s1, char* s2, char* s3);
 extern char* save4string(char* s1, char* s2, char* s3, char* s4);
+
+extern char* saveNstring(const char* s1, ...);
+
+#define bg_savestring(...) saveNstring(__VA_ARGS__, NULL)
 
 extern char* resaveWithQuotes(char* s1, int reallocFlag);
 

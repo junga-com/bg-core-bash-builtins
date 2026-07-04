@@ -59,6 +59,58 @@ void jsonUnescape(char* s)
 	}
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ObjRestoreMap
+
+void ObjRestoreMap_init(ObjRestoreMap** ppMap)
+{
+	*ppMap = NULL;
+}
+
+void ObjRestoreMap_destroy(ObjRestoreMap** ppMap)
+{
+	while (*ppMap) {
+		ObjRestoreMap* p = *ppMap;
+		*ppMap = p->next;
+
+		free(p->oldOID);
+		free(p->newOID);
+		free(p);
+	}
+}
+
+void ObjRestoreMap_put(ObjRestoreMap** ppMap, const char* oldOID, const char* newOID)
+{
+	ObjRestoreMap* p;
+
+	/* Replace an existing entry */
+	for (p=*ppMap; p; p=p->next) {
+		if (strcmp(p->oldOID, oldOID) == 0) {
+			free(p->newOID);
+			p->newOID = savestring(newOID);
+			return;
+		}
+	}
+
+	/* Insert new entry */
+	p = xmalloc(sizeof(*p));
+	p->oldOID = savestring(oldOID);
+	p->newOID = savestring(newOID);
+
+	p->next = *ppMap;
+	*ppMap = p;
+}
+
+const char* ObjRestoreMap_get(ObjRestoreMap* map, const char* oldOID)
+{
+	for (; map; map=map->next)
+		if (strcmp(map->oldOID, oldOID) == 0)
+			return map->newOID;
+
+	return NULL;
+}
+
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // JSONType
@@ -224,6 +276,7 @@ JSONToken* JSONToken_copy(JSONToken* that)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // JSONScanner
 // struct defined above
+
 JSONScanner* JSONScanner_newFromFile(char* inFile)
 {
 	struct stat finfo;
@@ -262,6 +315,8 @@ JSONScanner* JSONScanner_newFromFile(char* inFile)
 	// advance over leading whitespace to the real start of data
 	while (spctabnl(*this->pos) && this->pos<this->end) this->pos++;
 
+	ObjRestoreMap_init(&this->objDictionary);
+
 	return this;
 }
 
@@ -275,16 +330,21 @@ JSONScanner* JSONScanner_newFromStream(int fdJSON)
 	// at once. If this is not true for some reason we would have to make the buffer scanners smart enough to ask for more data
 	// whenever they reach the end of the buffer. I suspect that wont be needed, though.
 	this->length = 0;
-	this->bufAllocSize = STREAMCHUNK;
+	this->bufAllocSize = STREAMCHUNK +1;
 	this->buf = xmalloc(this->bufAllocSize);
 	if (!this->buf) {xfree(this);return NULL;}
 	ssize_t bytesRead;
-	while ( (bytesRead = read(fdJSON, this->buf, STREAMCHUNK)>0) ) {
+
+
+	while ((bytesRead = read(fdJSON,
+	                         this->buf + this->length,
+	                         this->bufAllocSize - this->length - 1)) > 0) {
 		this->length += bytesRead;
-		if (bytesRead==STREAMCHUNK) {
+
+		if (this->bufAllocSize - this->length <= 1) {
 			this->bufAllocSize += STREAMCHUNK;
 			this->buf = xrealloc(this->buf, this->bufAllocSize);
-			if (!this->buf) {xfree(this);return NULL;}
+			if (!this->buf) { xfree(this); return NULL; }
 		}
 	}
 
@@ -292,8 +352,28 @@ JSONScanner* JSONScanner_newFromStream(int fdJSON)
 	this->pos = this->buf;
 	this->end = this->buf+this->length;
 	*this->end = '\0';
+
+	ObjRestoreMap_init(&this->objDictionary);
+
 	return this;
 }
+
+char* JSONScanner_fixupObjRef(JSONScanner* this, char* value)
+{
+	BashObjRef objRef;
+	if (!BashObjRef_init(&objRef, value))
+		return NULL;
+
+	const char* restoredOID = ObjRestoreMap_get(this->objDictionary, objRef.oid);
+	if (!restoredOID)
+		return NULL;
+
+	bg_snprintf(objRef.oid, "%s", restoredOID);
+	return BashObjRef_saveString(&objRef);
+}
+
+
+
 
 JSONToken* JSONScanner_getToken(JSONScanner* this)
 {
@@ -396,10 +476,9 @@ JSONToken* JSONScanner_getObject(JSONScanner* this, BashObj* pObj)
 
 		// check for some special bash object system variables for special processing
 		if (strcmp(name->value,"_OID")==0) {
-			// // TODO: use _OID to update the objDictionary so that we can fixup relative objRefs
-			// char* sessionOID = value;
-			// objDictionary[sessionOID]=currentStack->pObj->name;
-			// objDictionary[currentStack->pObj->name]=sessionOID;
+			ObjRestoreMap_put(&this->objDictionary,
+												value->value,
+			                  pObj->vThis->name);
 
 		} else if (strcmp(name->value,"_Ref")==0 || strcmp(name->value,"0")==0) {
 			// ignore _Ref and "0" on restore
@@ -409,7 +488,15 @@ JSONToken* JSONScanner_getObject(JSONScanner* this, BashObj* pObj)
 			BashObj_setClass(pObj, value->value);
 
 		} else {
-			BashObj_setMemberValue(pObj, name->value, (JSONType_isBashObj(value->type)) ? (((BashObj*)value->value)->ref) : value->value );
+			char* valueToSet = JSONType_isBashObj(value->type)? ((BashObj*)value->value)->ref : value->value;
+
+			char* restoredValue = JSONScanner_fixupObjRef(this, valueToSet);
+			if (restoredValue)
+				valueToSet = restoredValue;
+
+			BashObj_setMemberValue(pObj, name->value, valueToSet);
+
+			xfree(restoredValue);
 		}
 
 		JSONToken_free(name);
@@ -420,8 +507,6 @@ JSONToken* JSONScanner_getObject(JSONScanner* this, BashObj* pObj)
 	depth--;
 	return token;
 }
-
-
 
 JSONToken* JSONScanner_getValue(JSONScanner* this)
 {
@@ -452,10 +537,17 @@ JSONToken* JSONScanner_getValue(JSONScanner* this)
 
 			if (JSONType_isBashObj(element->type))
 				BashObj_setMemberValue(pObj, indexStr, (((BashObj*)element->value)->ref) );
-			else if (JSONType_isAValue(element->type))
-				BashObj_setMemberValue(pObj, indexStr, element->value );
+			else if (JSONType_isAValue(element->type)) {
+				char* valueToSet = element->value;
+				char* restoredValue = JSONScanner_fixupObjRef(this, valueToSet);
+				if (restoredValue)
+					valueToSet = restoredValue;
 
-			else {
+				BashObj_setMemberValue(pObj, indexStr, valueToSet);
+
+				xfree(restoredValue);
+
+			} else {
 				depth--;
 				return JSONToken_makeError(this,element, "Unexpected token");
 			}
@@ -553,7 +645,7 @@ int Object_fromJSON(WORD_LIST* args)
 	if (args)
 		scanner = JSONScanner_newFromFile(args->word->word);
 	else
-		scanner = JSONScanner_newFromStream(1);
+		scanner = JSONScanner_newFromStream(0);
 
 	BashObj* pObj = BashObj_find("this", NULL,NULL);
 	if (BashObj_isNull(pObj))
