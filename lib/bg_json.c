@@ -668,20 +668,13 @@ int Object_fromJSON(WORD_LIST* args)
 }
 
 
-int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
+static int Object_toJSON_r(BashObj* this, ToJSONMode mode, int indentLevel, ObjOIDMap* objDictionary)
 {
-	// this pattern allows objDictionary to be shared among this and any recursive call that it spawns
-	// even though ShellVar_assocCreate will return an existing local var, it wont use one at a higher scope so we use ShellVar_find first
-	SHELL_VAR* objDictionary = ShellVar_find("objDictionary");
-	if (!objDictionary)
-		objDictionary = ShellVar_assocCreate("objDictionary");
-
-
 	// record that this object is being written to the json txt
 	//objDictionary[${_this[_OID]}]="sessionOID_${#objDictionary[@]}"
-	char* strCount = itos( ShellVar_assocSize(objDictionary) );
+	char* strCount = itos(objDictionary->count);
 	char* sessionOID = save2string("sessionOID_", strCount);
-	ShellVar_assocSet(objDictionary, this->vThis->name, sessionOID);
+	ObjOIDMap_put(objDictionary, this->vThis->name, sessionOID);
 	xfree(strCount);
 
 	char* tstr = ShellVar_assocGet(this->vCLASS, "defaultIndex");
@@ -718,9 +711,10 @@ int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
 			char* value = (char*)bVar->data;
 			if ( strncmp(value,"_bgclassCall",12)==0 ) {
 				BashObj subObj; BashObj_initFromObjRef(&subObj,value);
-				char* seenSessionID = ShellVar_assocGet(objDictionary, subObj.vThis->name);
+
+				const char* seenSessionID = ObjOIDMap_get(objDictionary, subObj.vThis->name);
 				if (! seenSessionID)
-					Object_toJSON(&subObj, mode, indentLevel);
+					Object_toJSON_r(&subObj, mode, indentLevel, objDictionary);
 				else {
 					BGString newRef; BGString_init(&newRef, 100);
 					BGString_copy(&newRef,"_bgclassCall");
@@ -758,9 +752,10 @@ int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
 			char* value = (char*)bVar->data;
 			if ( strncmp(value,"_bgclassCall",12)==0 ) {
 				BashObj subObj; BashObj_initFromObjRef(&subObj,value);
-				char* seenSessionID = ShellVar_assocGet(objDictionary, subObj.vThis->name);
+
+				const char* seenSessionID = ObjOIDMap_get(objDictionary, subObj.vThis->name);
 				if (! seenSessionID)
-					Object_toJSON(&subObj, mode, indentLevel);
+					Object_toJSON_r(&subObj, mode, indentLevel, objDictionary);
 				else {
 					BGString newRef; BGString_init(&newRef, 100);
 					BGString_copy(&newRef,"_bgclassCall");
@@ -791,9 +786,10 @@ int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
 
 			if ( strncmp(el->value,"_bgclassCall",12)==0 ) {
 				BashObj subObj; BashObj_initFromObjRef(&subObj,el->value);
-				char* seenSessionID = ShellVar_assocGet(objDictionary, subObj.vThis->name);
+
+				const char* seenSessionID = ObjOIDMap_get(objDictionary, subObj.vThis->name);
 				if (! seenSessionID)
-					Object_toJSON(&subObj, mode, indentLevel);
+					Object_toJSON_r(&subObj, mode, indentLevel, objDictionary);
 				else {
 					BGString newRef; BGString_init(&newRef, 100);
 					BGString_copy(&newRef,"_bgclassCall");
@@ -819,6 +815,17 @@ int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
 	return EXECUTION_SUCCESS;
 }
 
+
+int Object_toJSON(BashObj* this, ToJSONMode mode, int indentLevel)
+{
+	ObjOIDMap objDictionary;
+	ObjOIDMap_init(&objDictionary);
+
+	int result = Object_toJSON_r(this, mode, indentLevel, &objDictionary);
+
+	ObjOIDMap_destroy(&objDictionary);
+	return result;
+}
 
 char* ShellVar_toJSON(SHELL_VAR* var, int indentLevel)
 {

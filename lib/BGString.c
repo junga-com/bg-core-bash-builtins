@@ -143,11 +143,11 @@ void BGString_appendn(BGString* pStr, char* separator, char* s, int sLen)
 	pStr->len+=sLen;
 	pStr->buf[pStr->len]='\0';
 }
-void BGString_append(BGString* pStr, char* separator, char* s)
+void BGString_append(BGString* pStr, char* separator, const char* s)
 {
 	if (!s || !*s)
 		return;
-	BGString_appendn(pStr, separator, s, strlen(s));
+	BGString_appendn(pStr, separator, (char*)s, strlen(s));
 }
 void BGString_copy(BGString* pStr, char* s)
 {

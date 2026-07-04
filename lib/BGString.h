@@ -31,7 +31,7 @@ extern int  BGString_writeln(BGString* pStr, FILE* fd);
 extern void BGString_appendf( BGString* pStr, char* separator, char* fmt, ...);
 extern void BGString_appendfv(BGString* pStr, char* separator, char* fmt, va_list args);
 extern void BGString_appendn( BGString* pStr, char* separator, char* s, int sLen);
-extern void BGString_append(  BGString* pStr, char* separator, char* s);
+extern void BGString_append(  BGString* pStr, char* separator, const char* s);
 extern void BGString_copy(BGString* pStr, char* s);
 extern void BGString_replaceWhitespaceWithNulls(BGString* pStr);
 extern void BGString_replaceChar(BGString* pStr, char toReplace, char withThis);
