@@ -2,6 +2,7 @@
 #include "bg_manifest.h"
 
 #include <stdio.h>
+#include <unistd.h>
 
 #include "bg_bashAPI.h"
 #include "BGString.h"
@@ -10,7 +11,7 @@
 
 
 void ManifestRecord_bgtrace(ManifestRecord* pR, char* label) {
-	int oneLine = 1;
+	int oneLine = 0;
 
 	if (oneLine) {
 		BGString s;
@@ -62,6 +63,7 @@ ManifestRecord* ManifestRecord_assign(ManifestRecord* ret, char* pkgName, char* 
 
 	ret->scriptName = NULL;
 	ret->pluginName = NULL;
+	ret->manFile    = NULL;
 	ret->mode       = NULL; // NULL|importLookup|PluginTypeLookup
 
 	ret->matchCount = 0;
@@ -86,6 +88,7 @@ void ManifestRecord_assignFromInputLine(ManifestRecord* pR, char* line)
 
 	pR->scriptName = savestring("");
 	pR->pluginName = savestring("");
+	pR->manFile    = NULL;
 	pR->mode       = NULL;
 	pR->matchCount = 0;
 
@@ -101,28 +104,43 @@ ManifestRecord* ManifestRecord_makeImportCriteria(ManifestRecord* ret, char* scr
 	ret->assetName = NULL;
 	ret->assetPath = NULL;
 
-	ret->scriptName = savestring(scriptName);
+	ret->scriptName = NULL;
 	ret->pluginName = NULL;
+	ret->manFile    = NULL;
 	ret->mode       = NULL; // NULL|importLookup|PluginTypeLookup
 
 	if (scriptName && *scriptName) {
+		scriptName = bgstr(scriptName);
+		const char* base = strrchr(scriptName, '/');
+		base = base ? base + 1 : scriptName;
+		ret->scriptName = savestring(base);
+		size_t len = strlen(ret->scriptName);
+		if (len > 3 && strcmp(ret->scriptName + len - 3, ".sh") == 0)
+				ret->scriptName[len - 3] = '\0';
+
+		// match ^PluginType prefix
 		if (strncmp(scriptName, "PluginType.", 11) == 0 || strncmp(scriptName, "PluginType:", 11) == 0) {
 			ret->mode = savestring("PluginTypeLookup");
 			ret->pluginName = savestring(scriptName + 11);
 
 		} else {
-			ret->mode = savestring("importLookup");
 			size_t len = strlen(scriptName);
 
+			// match .PluginType suffix
 			if (len > 11 && strcmp(scriptName + len - 11, ".PluginType") == 0) {
 				ret->mode = savestring("PluginTypeLookup");
 				ret->pluginName = savestring(scriptName);
 				ret->pluginName[len - 11] = '\0';
 
+			// match :PluginType suffix
 			} else if (len > 11 && strcmp(scriptName + len - 11, ":PluginType") == 0) {
 				ret->mode = savestring("PluginTypeLookup");
 				ret->pluginName = savestring(scriptName);
 				ret->pluginName[len - 11] = '\0';
+
+			// its not any PluginType syntax so its importLookup
+			} else {
+				ret->mode = savestring("importLookup");
 			}
 		}
 	}
@@ -149,6 +167,7 @@ ManifestRecord* ManifestRecord_save(ManifestRecord* dst, ManifestRecord* src)
 
 	dst->scriptName = savestring("");
 	dst->pluginName = savestring("");
+	dst->manFile    = (src->manFile)? savestring(src->manFile) : NULL;
 	dst->mode       = NULL;
 	dst->matchCount = 0;
 
@@ -170,6 +189,8 @@ void ManifestRecord_cleanup(ManifestRecord* rec)
 
 		rec->alloced = 0;
 	}
+
+	if (rec->manFile) {xfree(rec->manFile); rec->manFile = NULL;}
 }
 
 void ManifestRecord_free(ManifestRecord* pDynRec) {
@@ -302,18 +323,24 @@ int ManifestRecord_match(ManifestRecord* toTest, ManifestRecord* criteria) {
 	// mode=="importLookup" && $2=="plugin"          && ($3==baseName || $4 ~ "(^|/)" scriptName "$")
 	// mode=="importLookup" && $2=="unitTest"        && ($3==baseName || $4 ~ "(^|/)" scriptName "$")
 	if (strcmp(criteria->mode, "importLookup") == 0) {
+		// these are the types of assets that import can load (they have to be bash scripts)
+		// if its not one of these return false
 		if (
 			strcmp(toTest->assetType, "lib.script.bash") != 0 &&
 			strcmp(toTest->assetType, "plugin")          != 0 &&
+			strcmp(toTest->assetType, "PluginType")      != 0 &&
 			strcmp(toTest->assetType, "unitTest")        != 0
 		)
 			return 0;
 
-		if (criteria->assetName && strcmp(toTest->assetName, criteria->assetName) == 0)
+		if (!criteria->scriptName || !*criteria->scriptName)
+			return 0;
+
+		if (criteria->scriptName && strcmp(toTest->assetName, criteria->scriptName) == 0)
 			return 1;
 
 		if (criteria->scriptName) {
-			char* pathRegex = saprintf("(^|/)%s$", criteria->scriptName);
+			char* pathRegex = saprintf("(^|/)%s([.]sh)?$", criteria->scriptName);
 			int matched = matchFilter(pathRegex, toTest->assetPath);
 			xfree(pathRegex);
 			return matched;
@@ -400,6 +427,9 @@ ManifestRecord manifestGetOne(char* manFile, char* outputStr, ManifestRecord* pT
 //    ManifestRecord_arrayFree(results);
 ManifestRecord* manifestGetC(char* manFile, char* outputStr, ManifestRecord* pTarget, ManifestFilterFn filterFn)
 {
+	// int vTest = (ShellVar_find("_importTrace")) || ( pTarget->scriptName && strcmp(pTarget->scriptName, "/usr/lib/Collect.PluginType")==0 );
+	// if (vTest) __bgtrace("manifestGetC 1\n");
+
 	int retValCount = 0;
 	int retValAllocCount = 5;
 
@@ -407,17 +437,32 @@ ManifestRecord* manifestGetC(char* manFile, char* outputStr, ManifestRecord* pTa
 	ManifestRecord* retVal = xmalloc(retValAllocCount*sizeof(ManifestRecord));
 	ManifestRecord_assign(&(retVal[retValCount]),    NULL,NULL,NULL,NULL);
 
+	if (!manFile)
+		manFile = ShellVar_get(ShellVar_find("bgVinstalledManifest"));
+	if (!manFile || strcmp(manFile,"")==0) {
+		manFile = "/var/lib/bg-core/manifest";
+
+		// when bg-core is installed its postinst creates the combined manifest, so until then, it can
+		// use its package hostmanifest
+		if (access(manFile, F_OK) != 0) {
+			manFile="/var/lib/bg-core/bg-core/hostmanifest";
+		}
+	}
+
+	retVal->manFile = savestring(manFile);
+
 	// if the caller did not specify any filters, we interpret it as there can not be any match.
 	if (ManifestRecord_criteriaIsEmpty(pTarget))
 		return retVal;
 
-	if (!manFile)
-		manFile = ShellVar_get(ShellVar_find("bgVinstalledManifest"));
-	if (!manFile || strcmp(manFile,"")==0)
-		manFile = "/var/lib/bg-core/manifest";
 	FILE* manFileFD = fopen(manFile, "r");
-	if (!manFileFD)
+	if (!manFileFD) {
+		xfree(retVal->manFile);
+		retVal->manFile = bg_savestring(manFile,"(file not found)");
 		return retVal;
+	}
+
+	//if (vTest) __bgtrace("manifestGetC manFile='%s'\n", manFile);
 
 	// bg-core\0       awkDataSchema\0   plugins\0         /usr/lib/plugins.awkDataSchema\0
 	// '--<pkgName>'   '--<assetType>'   '--<assetName>'   '--<assetPath >'
@@ -428,6 +473,7 @@ ManifestRecord* manifestGetC(char* manFile, char* outputStr, ManifestRecord* pTa
 	while (freadline(manFileFD, &buf, &bufSize) > -1) {
 		pRec = &(retVal[retValCount]);
 		ManifestRecord_assignFromInputLine(pRec, buf);
+		pRec->manFile = savestring(manFile);
 
 		matched = 0;
 		if (filterFn)

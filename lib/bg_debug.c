@@ -14,6 +14,7 @@
 
 #include "bg_bashAPI.h"
 
+char* _bgtraceFile="";
 FILE* _bgtraceFD=NULL;
 int bgtraceIndentLevel=0;
 
@@ -52,8 +53,10 @@ void bgtraceOn()
 
 		if (!_bgtraceFD)
 			fprintf(stderr, "FAILED to open trace file '%s' errno='%d'\n", tracePath, errno);
-		else
+		else {
+			_bgtraceFile = bg_savestring(tracePath)
 			bgtrace0(0, "BASH bgCore trace started\n");
+		}
 	}
 
 	// install a segfault handler to bgtrace a stack trace

@@ -44,6 +44,7 @@ extern char* saprintf(char* fmt, ...);
 
 #define bgstr(s)              ( (s) ?(s) :"" )
 
+// for fixed buffers only b/c sizeof(dst) must work 
 #define bg_snprintf(dst, fmt, ...)                                      \
 	do {                                                             \
 		int _bg_n = snprintf((dst), sizeof(dst), (fmt), ##__VA_ARGS__); \

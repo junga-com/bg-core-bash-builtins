@@ -15,6 +15,9 @@ typedef struct {
 	char* scriptName;
 	char* pluginName;
 
+	// record the manFile that this  record came from
+	char* manFile;
+
 	char* mode; // NULL|importLookup|PluginTypeLookup
 	int matchCount;
 	int alloced;

@@ -1,7 +1,6 @@
 
 #include "bg_bashAPI.h"
 
-
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -1372,6 +1371,7 @@ WORD_LIST* fsExpandFilesC(
 
 		// this will not reuturn. exec find
 		execvp(cmdlineTokens[0], cmdlineTokens);
+		perror("execvp find");
 		_exit(127);
 	}
 	close(pipefd[1]);                          /* close write end */
@@ -1412,28 +1412,82 @@ WORD_LIST* fsExpandFilesC(
 	}
 	fclose(fp);
 
+
 	/* collect child status */
-	int status;
-	waitpid(pid, &status, 0);
 	int rc;
-	if (WIFEXITED(status))
+	int status = 0;
+	pid_t waited;
+	do {
+		waited = waitpid(pid, &status, 0);
+	} while (waited < 0 && errno == EINTR);
+
+	if (waited < 0) {
+		int savedErrno = errno;
+
+		if (savedErrno == ECHILD) {
+			// *IMPORTANT*: circa 2026-06 I changed this function to spawn gnu find directly
+			//              instead of using the bash exec ( I forget why but it solved some issue)
+			//              2026-07-04 I observed that waitpid intermittently failed causing my
+			//              code to think gnu find failed when it did not. I think there is a race
+			//              with something in bash to reap the spawned process.
+			//              In this case we cant get the real exit code so the code below was modified to
+			//              consider non-empty errOut to mean gnu find failed as well as
+
+			struct stat st;
+			if (stat(errOut, &st) == 0 && st.st_size > 0) {
+				__bgtrace("bgfind waitpid ECHILD with stderr output (%jd bytes): pid=%d cmdline='%s'\n",
+					(intmax_t)st.st_size, pid, cmdline);
+				rc = 254;
+			} else {
+				//__bgtrace("bgfind waitpid ECHILD after pipe EOF; no stderr so treating as success (probably a race with bash to reap the spawned process): pid=%d \n",pid);
+				rc = 0;
+			}
+
+		} else {
+			__bgtrace("bgfind waitpid failed: pid=%d errno=%d (%s) cmdline='%s'\n",
+				pid, savedErrno, strerror(savedErrno), cmdline);
+			rc = 254;
+		}
+
+	} else if (WIFEXITED(status)) {
 		rc = WEXITSTATUS(status);
-	else if (WIFSIGNALED(status))
+
+	} else if (WIFSIGNALED(status)) {
 		rc = 128 + WTERMSIG(status);
-	else
+
+	} else if (WIFSTOPPED(status)) {
+		__bgtrace("\n\nbgfind child stopped: status=%d stopsig=%d \n\ncmdline='%s'\n\n",
+			status, WSTOPSIG(status), cmdline);
+		rc = 128 + WSTOPSIG(status);
+
+
+	#ifdef WIFCONTINUED
+	} else if (WIFCONTINUED(status)) {
+		__bgtrace("\n\nbgfind child continued: status=%d \n\ncmdline='%s'\n\n", status, cmdline);
 		rc = 255;
+	#endif
+
+	} else {
+		__bgtrace("\n\nbgfind unexpected wait status: status=%d hex=0x%x \n\ncmdline='%s'\n\n",status, status, cmdline);
+		rc = 255;
+	}
 
 	// if find failed
 	if (rc != 0) {
-		__bgtrace("bgfind Failed(%d): cmdline='%s'\n", rc, cmdline);
+		__bgtrace("\nbgfind Failed(%d): \ncmdline='%s'\n\n", rc, cmdline);
 		FILE* errOutFD = fopen(errOut, "r");
-		while (freadline(errOutFD, &buf, &bufSize) > -1) {
-			__bgtrace("   err: %s\n", buf);
+		if (errOutFD) {
+			while (freadline(errOutFD, &buf, &bufSize) > -1) {
+				__bgtrace("   err: %s\n", buf);
+			}
+			fclose(errOutFD);
 		}
-		fclose(errOutFD);
 		unlink(errOut);
 		xfree(errOut);
-		assertError(NULL, "gnu find failed. \n\tcmdline='%s'\n", cmdline);
+		if (rc==254)
+			assertError(NULL, "gnu find: waitpid failed to get the exit code. \n\tcmdline='%s'\n", cmdline);
+		else
+			assertError(NULL, "gnu find failed. \n\tcmdline='%s'\n", cmdline);
 	}
 	xfree(buf);
 	xfree(cmdline);

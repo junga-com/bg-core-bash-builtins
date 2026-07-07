@@ -46,6 +46,7 @@
 #endif
 
 
+extern char* _bgtraceFile;
 extern FILE* _bgtraceFD;
 extern int bgtraceIndentLevel;
 extern void bgtraceOn();

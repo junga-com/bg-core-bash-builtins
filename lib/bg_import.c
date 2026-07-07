@@ -36,7 +36,6 @@ int importBashLibrary(char* scriptName, int flags, char** retVar)
 
 	ManifestRecord foundManRec = {0};
 
-
 	ManifestRecord targetRec; ManifestRecord_makeImportCriteria(&targetRec, scriptName);
 	foundManRec = manifestGetOne(NULL, NULL, &targetRec, NULL);
 
@@ -45,23 +44,37 @@ int importBashLibrary(char* scriptName, int flags, char** retVar)
 	// ManifestRecord_bgtrace(&foundManRec, "!!! foundManRec");
 	//exit(1);
 
-	if (foundManRec.assetPath && !fsExists(foundManRec.assetPath)) {
+	if (foundManRec.assetPath && *foundManRec.assetPath && !fsExists(foundManRec.assetPath)) {
 		xfree(lookupName);
+		ManifestRecord_bgtrace(&foundManRec, "import: path found in manifest does not exist.");
+		char errorMsg[1024];
+		bg_snprintf(errorMsg, "import: path found in manifest for '%s' does not exist. Usually this means the hostmanifest file needs to be rebuilt. \n\tFound path = '%s' \n\tmanFile='%s'", scriptName, foundManRec.assetPath, foundManRec.manFile );
 		ManifestRecord_cleanup(&foundManRec);
-		return assertError(NULL,"import: path found in manifest for '%s' does not exist. Ussually this means the hostmanifest file needs to be rebuilt.", scriptName);
+		return assertError(NULL,errorMsg);
 	}
 
-	if (!foundManRec.assetPath) {
-		if (!(flags&im_devOnlyFlag))
-			__bgtrace("import: Not found in manifest. Falling back on searching paths for '%s'\n",scriptName);
-
+	if (! (foundManRec.assetPath && *foundManRec.assetPath) ) {
 		bgtrace0(2,"not found in manifest ... searching paths\n");
+
 		foundManRec.assetPath = findInLibPaths(scriptName);
 
-		if (!foundManRec.assetPath) {
+		__bgtrace("import: Not found in manifest. Falling back on searching paths for \n\tscript='%s' \n\tmanFile='%s'\n\tsearchResult='%s'\n", bgstr(scriptName), bgstr(foundManRec.manFile), bgstr(foundManRec.assetPath));
+		if (strcmp(bgstr(_bgtraceFile),"/var/log/bg-core/bgtrace.out")!=0) {
+			FILE* rootTraceFileFD = fopen("/var/log/bg-core/bgtrace.out", "a");
+			if (rootTraceFileFD) {
+				fprintf(rootTraceFileFD, "import: Not found in manifest. Falling back on searching paths for \n\tscript='%s' \n\tmanFile='%s'\n\tsearchResult='%s'\n", bgstr(scriptName), bgstr(foundManRec.manFile), bgstr(foundManRec.assetPath));
+				fflush(rootTraceFileFD);
+				fclose(rootTraceFileFD);
+			}
+		}
+
+		if (!(foundManRec.assetPath && *foundManRec.assetPath)) {
 			bgtrace0(2,"not found searching paths either. giving up\n");
-			if (!(flags&im_quietFlag))
-				assertError(NULL,"import: bash library not found in manifest nor in any system path. Default system path is '/usr/lib'. scriptName='%s'", scriptName);
+			if (!(flags&im_quietFlag)) {
+				char errorMsg[1024];
+				bg_snprintf(errorMsg, "import: bash library not found in manifest nor in any system path. Default system path is '/usr/lib'. \n\tscriptName = '%s' \n\tFound path = '%s' \n\tmanFile='%s'", bgstr(scriptName), bgstr(foundManRec.assetPath), bgstr(foundManRec.manFile) );
+				assertError(NULL,errorMsg);
+			}
 
 			xfree(lookupName);
 			ShellVar_set(vL1,"_importSetErrorCode");
@@ -71,7 +84,6 @@ int importBashLibrary(char* scriptName, int flags, char** retVar)
 			return 202;
 		}
 	}
-
 
 	// if the caller passed in a var to receive the path, fill it in
 	if (retVar) {
@@ -98,7 +110,6 @@ int importBashLibrary(char* scriptName, int flags, char** retVar)
 	int errexitValue=0;
 	if (flags & im_stopOnErrorFlag)
 		errexitValue = change_flag('e', FLAG_ON);
-
 
 	int ret = source_builtin(args);
 
