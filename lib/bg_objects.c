@@ -403,7 +403,7 @@ void BashObj_free(BashObj* pObj)
 
 // this is a convenience function for C code to call ConstructObject which converts the C args to a WORD_LIST
 // vObjVar can be NULL if the caller only needs the BashObj* and does not need an objvar SHELL_VAR set.
-BashObj* BashObj_makeNewObject(char* _CLASS, SHELL_VAR* vObjVar, ...)
+BashObj* BashObj_makeNewObject(const char* _CLASS, SHELL_VAR* vObjVar, ...)
 {
 	bgtrace1(1,"START BashObj_makeNewObject '%s'\n",_CLASS);
 	bgtracePush();
@@ -706,8 +706,7 @@ int BashObj_setMemberValue(BashObj* pObj, char* memberName, char* value)
 
 	} else if (
 		strcmp(memberName, "_OID") == 0 ||
-		strcmp(memberName, "_Ref") == 0 ||
-		strcmp(memberName, "0") == 0) {
+		strcmp(memberName, "_Ref") == 0 ) {
 			assertError(NULL, "'%s' is read-only", memberName);
 
 	} else if (*memberName == '_'){
@@ -718,6 +717,8 @@ int BashObj_setMemberValue(BashObj* pObj, char* memberName, char* value)
 		ShellVar_arraySetI(pObj->vThis, index, value);
 
 	} else {
+		if (strcmp(memberName, "0") == 0)
+			assertError(NULL, "'%s' is read-only", memberName);
 		ShellVar_assocSet(pObj->vThis, memberName, value);
 	}
 	return EXECUTION_SUCCESS;
@@ -830,22 +831,27 @@ char* BashObj_getMethod(BashObj* pObj, char* methodName)
 }
 
 
-int BashObj_gotoMemberObj(BashObj* pObj, char* memberName, int allowOnDemandObjCreation, int* pErr)
+int BashObj_gotoMemberObj(BashObj* pObj, char* memberName, int allowOnDemandObjCreation, const char *onDemandClass, int* pErr)
 {
-	if (pErr) *pErr=EXECUTION_SUCCESS;
+	if (pErr)
+		*pErr=EXECUTION_SUCCESS;
+
 	char* memberVal=BashObj_getMemberValue(pObj, memberName);
+
+	// BashObj_getMemberValue returns NULL if its an invalid array index b/c not all call sites want to make it an error
+	if (!memberVal && array_p(pObj->vThis) && ! isNumber(memberName)) {
+		assertError(NULL,"MemberName is not a valid index for a Numeric array\n\tmemberName='%s'\n", memberName);
+		if (pErr) *pErr=EXECUTION_FAILURE;
+		return 0;
+	}
+
 	if (!memberVal) {
 		if (!allowOnDemandObjCreation) {
 			assertError(NULL,"MemberName does not exist and allowOnDemandObjCreation is false\n\tmemberName='%s'\n", memberName);
 			if (pErr) *pErr=EXECUTION_FAILURE;
 			return 0;
 		}
-		if (array_p(pObj->vThis) && isNumber(memberName)) {
-			assertError(NULL,"MemberName is not a valid index for a Numeric array\n\tmemberName='%s'\n", memberName);
-			if (pErr) *pErr=EXECUTION_FAILURE;
-			return 0;
-		}
-		BashObj* subObj=BashObj_makeNewObject("Object",NULL);
+		BashObj* subObj=BashObj_makeNewObject(onDemandClass ? onDemandClass : "Object",NULL);
 		BashObj_setMemberValue(pObj, memberName, subObj->ref);
 		memcpy(pObj,subObj, sizeof(*pObj));
 		xfree(subObj);
@@ -1242,6 +1248,20 @@ int IsAnObjRefS(char* str)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // CMD: _bgclassCall
 
+static int partIsBracketedUnsignedInt(const char *part)
+{
+	if (!part || !*part)
+		return 0;
+
+	const char *p = part;
+
+	while (*p >= '0' && *p <= '9')
+		p++;
+
+	/* Require at least one digit, then exactly one trailing ']'. */
+	return p != part && p[0] == ']' && p[1] == '\0';
+}
+
 regex_t regex;
 
 int _bgclassCall(WORD_LIST* list)
@@ -1458,7 +1478,10 @@ int _bgclassCall(WORD_LIST* list)
 			pCurPart=pNextPart;
 		} else {
 			// descend into the next member object if its not the last part
-			if (!isLastPart && !BashObj_gotoMemberObj(&objInstance, pCurPart, allowOnDemandObjCreation, &localErrno)) {
+			const char *onDemandClass = partIsBracketedUnsignedInt(pNextPart)
+																	? "Array"
+																	: "Object";
+			if (!isLastPart && !BashObj_gotoMemberObj(&objInstance, pCurPart, allowOnDemandObjCreation, onDemandClass,  &localErrno)) {
 				// 2022-10 bobg: commented this out. not sure why it was like this. tracking down valgrind mem leaks. this did not help but left it commented out
 				// if (localErrno==EXECUTION_FAILURE)
 				// 	return EXECUTION_FAILURE;

@@ -99,7 +99,7 @@ extern BashObj* BashObj_find(           char* name, char* refClass, char* hierar
 extern void     BashObj_free(           BashObj* pObj);
 
 // making new instances
-extern BashObj* BashObj_makeNewObject( char* _CLASS, SHELL_VAR* vObjVar, ...);
+extern BashObj* BashObj_makeNewObject( const char* _CLASS, SHELL_VAR* vObjVar, ...);
 extern void     BashObj_setClass(      BashObj* pObj, char* newClassName);
 
 extern void     BashObj_setupMethodCallContextDone(BashObj* this);
@@ -110,7 +110,7 @@ extern char*    BashObj_getMethod(      BashObj* pObj, char* methodName);
 extern void     BashObj_unsetMember(    BashObj* pObj, char* memberName);
 
 // reset pObj to point to its member obj
-extern int      BashObj_gotoMemberObj(  BashObj* pObj, char* memberName, int allowOnDemandObjCreation, int* pErr);
+extern int      BashObj_gotoMemberObj(  BashObj* pObj, char* memberName, int allowOnDemandObjCreation, const char *onDemandClass, int* pErr);
 
 extern void     BashObj_dump(BashObj* pObj);
 
